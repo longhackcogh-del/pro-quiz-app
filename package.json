@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server/app.js",
     "dev": "node --watch server/app.js",
-    "test": "node --test tests/import-flow.test.js tests/import-browser.test.js tests/google-auth.test.js tests/gemini-flow.test.js tests/wrong-review.test.js tests/account-isolation.test.js tests/postgres-flow.test.js"
+    "test": "node --test tests/import-flow.test.js tests/import-browser.test.js tests/google-auth.test.js tests/gemini-flow.test.js tests/wrong-review.test.js tests/account-isolation.test.js tests/postgres-flow.test.js tests/security.test.js"
   },
   "dependencies": {
     "express": "^5.1.0",

@@ -14,6 +14,8 @@ const { generateGemini } = require('./gemini');
 const { ownerId, requireAccount } = require('./ownership');
 
 const app = express();
+app.disable('x-powered-by');
+app.use(require('./security'));
 const port = Number(process.env.PORT) || 3000;
 const publicDirectory = path.join(__dirname, '..', 'public');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -165,7 +167,8 @@ async function getAttempt(id, includeAnswer = false) {
     const question = (await getQuestion(questionId));
     if (!question) return null;
     const order = optionOrders[questionId] || [0, 1, 2, 3];
-    return { id: question.id, prompt: question.prompt, options: order.map((optionIndex) => ({ index: optionIndex, text: question.options[optionIndex] })), selectedIndex: answers[questionId] ?? null, answerStatus: question.answerStatus, ...(includeAnswer && { answerIndex: question.answerIndex }) };
+    const revealAnswer = includeAnswer && (attempt.status === 'completed' || validAnswer(answers[questionId]));
+    return { id: question.id, prompt: question.prompt, options: order.map((optionIndex) => ({ index: optionIndex, text: question.options[optionIndex] })), selectedIndex: answers[questionId] ?? null, answerStatus: question.answerStatus, ...(revealAnswer && { answerIndex: question.answerIndex }) };
   }))).filter(Boolean);
   return { id: attempt.id, status: attempt.status, currentIndex: attempt.current_index, score: attempt.score, total: questions.length, questions, updatedAt: attempt.updated_at };
 }

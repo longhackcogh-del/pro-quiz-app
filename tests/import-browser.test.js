@@ -211,7 +211,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate("document.querySelector('#bank-search').value=''; filterQuestionBank()");
   await evaluate('showQuiz()');
   const sourceAttemptId = await evaluate('state.attempt.id');
-  await evaluate('chooseAnswer((currentQuestion().answerIndex+1)%4)');
+  await evaluate('chooseAnswer((state.questions.find(q=>q.id===currentQuestion().id).answerIndex+1)%4)');
   await evaluate('openWrongLogView()');
   assert.equal(await evaluate("document.querySelectorAll('#scroller-wrong-list .question-card').length"),1);
   assert.ok(await evaluate("document.querySelector('#scroller-wrong-list').textContent.includes('ĐANG LÀM')"));
@@ -227,7 +227,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate('currentQuestion().selectedIndex'),null);
   await evaluate(`(async()=>{state.attempt=await api('/api/attempts/${sourceAttemptId}');await showQuiz()})()`);
   for (let index=0; index<3; index++) {
-    await evaluate("(()=>{const wrong=[...document.querySelectorAll('.option-item')].find(button => Number(button.dataset.optionIndex)!==currentQuestion().answerIndex);wrong.click()})()");
+    await evaluate("(()=>{const wrong=[...document.querySelectorAll('.option-item')].find(button => Number(button.dataset.optionIndex)!==state.questions.find(q=>q.id===currentQuestion().id).answerIndex);wrong.click()})()");
     await until(index===2 ? "state.view === 'v-result'" : `state.attempt.currentIndex === ${index+1} && !state.busy`);
   }
   assert.equal(await evaluate('state.attempt.score'),0);

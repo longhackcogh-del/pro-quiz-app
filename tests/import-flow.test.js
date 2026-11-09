@@ -188,10 +188,12 @@ test('HTTP: TXT/paste → AI proposal → confirmation → shared bank → shuff
   assert.equal(attempt.total, 2);
   assert.ok(attempt.questions.every((question) => question.answerStatus === 'confirmed'));
   assert.ok(!attempt.questions.some((question) => question.id === saved.data.imported[1].id));
+  assert.ok(attempt.questions.every(question => !Object.hasOwn(question,'answerIndex')));
+  const bankAnswers=new Map((await request('/api/questions')).data.map(question=>[question.id,question.answerIndex]));
   for (const [index, question] of attempt.questions.entries()) {
     assert.deepEqual(question.options.map((option) => option.index).sort(), [0, 1, 2, 3]);
-    await request(`/api/attempts/${attempt.id}/answer`, { questionId: question.id, selectedIndex: (question.answerIndex + 1) % 4, currentIndex: index }, 'PATCH');
-    await request(`/api/attempts/${attempt.id}/answer`, { questionId: question.id, selectedIndex: question.answerIndex, currentIndex: index }, 'PATCH');
+    await request(`/api/attempts/${attempt.id}/answer`, { questionId: question.id, selectedIndex: (bankAnswers.get(question.id) + 1) % 4, currentIndex: index }, 'PATCH');
+    await request(`/api/attempts/${attempt.id}/answer`, { questionId: question.id, selectedIndex: bankAnswers.get(question.id), currentIndex: index }, 'PATCH');
   }
   const result = await request(`/api/attempts/${attempt.id}/submit`, {});
   assert.equal(result.data.score, 2);
@@ -205,7 +207,7 @@ test('HTTP: TXT/paste → AI proposal → confirmation → shared bank → shuff
   assert.equal(exported.status, 200);
   assert.ok(exported.headers.get('content-disposition').includes('pro-quiz-bank.txt'));
   assert.ok((await exported.text()).includes(first.prompt));
-  const chatQuestion = attempt.questions[0];
+  const chatQuestion = result.data.questions[0];
   const chatPath = `/api/attempts/${attempt.id}/questions/${chatQuestion.id}/chat`;
   const chat = await request(chatPath, { message: 'Explain this answer' });
   assert.equal(chat.status, 200);
@@ -237,7 +239,7 @@ test('HTTP: TXT/paste → AI proposal → confirmation → shared bank → shuff
   // Wrong-answer review, grouping, retry and destructive controls use only this test database.
   const wrongAttempt = (await request('/api/attempts', {})).data;
   const wrongQuestion = wrongAttempt.questions[0];
-  await request(`/api/attempts/${wrongAttempt.id}/answer`, {questionId:wrongQuestion.id,selectedIndex:(wrongQuestion.answerIndex+1)%4,currentIndex:0}, 'PATCH');
+  await request(`/api/attempts/${wrongAttempt.id}/answer`, {questionId:wrongQuestion.id,selectedIndex:(bankAnswers.get(wrongQuestion.id)+1)%4,currentIndex:0}, 'PATCH');
   assert.equal((await request(`/api/attempts/${wrongAttempt.id}/submit`, {})).data.wrongCount, 2);
   const wrongHistory = (await request('/api/wrong-answers')).data;
   assert.equal(wrongHistory.length,2);

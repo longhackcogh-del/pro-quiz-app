@@ -48,6 +48,7 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  assert.equal((await request(b,'/api/question-sets/'+set.id,{name:'Not allowed'},'PATCH')).status,404);
  const attempt=(await request(a,'/api/attempts',{questionIds:[q.id]})).data;
  assert.equal(attempt.total,1);
+ assert.ok(attempt.questions.every(question=>!Object.hasOwn(question,'answerIndex')));
  assert.equal((await request(b,'/api/attempts/'+attempt.id)).status,404);
  assert.equal((await request(a,'/api/attempts/'+attempt.id+'/answer',{questionId:q.id,selectedIndex:0,currentIndex:0},'PATCH')).status,200);
  assert.equal((await request(a,'/api/wrong-answers')).data.length,1);

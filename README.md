@@ -77,6 +77,8 @@ tests/                     API và browser integration tests
 
 ## Phạm vi và hạn chế
 
+Xem [bảo vệ và hướng dẫn thay khóa đã lộ](SECURITY.md). API luyện tập chỉ trả đáp án sau khi câu đã được trả lời hoặc bài đã nộp. Người dùng vẫn có quyền xem đáp án trong kho của mình; chưa phải chế độ thi chống gian lận.
+
 - Chưa có thanh toán hoặc quota theo gói; chưa thêm hạn mức sử dụng trong lượt chuẩn bị deploy.
 - Phiên đăng nhập lưu trong RAM trong 8 giờ: restart/deploy cần đăng nhập lại. Chưa hỗ trợ nhiều instance chia sẻ phiên.
 - Chưa có OCR cho PDF scan. Không bảo đảm đáp án AI luôn đúng; cần người dùng kiểm tra.
