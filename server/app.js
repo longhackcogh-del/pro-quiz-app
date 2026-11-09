@@ -1,0 +1,479 @@
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const express = require('express');
+const multer = require('multer');
+const mammoth = require('mammoth');
+const { PDFParse } = require('pdf-parse');
+if (require.main === module) {
+  try { process.loadEnvFile(path.join(__dirname, '..', '.env')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
+const db = require('./database');
+const { parseQuizText } = require('./parser');
+const { validAnswer, suggestAnswers } = require('./ai-suggestions');
+const { generateGemini } = require('./gemini');
+const { ownerId, requireAccount } = require('./ownership');
+
+const app = express();
+const port = Number(process.env.PORT) || 3000;
+const publicDirectory = path.join(__dirname, '..', 'public');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.get('/healthz', (_req,res) => {
+  try { db.prepare('SELECT 1').get(); res.json({status:'ok'}); }
+  catch { res.status(503).json({status:'unavailable'}); }
+});
+app.use(express.json({ limit: '200kb' }));
+app.use(require('./google-auth').createGoogleAuth());
+app.use('/api', (req,res,next) => {
+  if (['/ai/status','/integrations/pdf'].includes(req.path)) return next();
+  return requireAccount(req,res,next);
+});
+app.get('/index.html', (_req, res) => res.redirect('/'));
+app.use(express.static(publicDirectory, { index: false }));
+app.get('/', (_req, res) => res.sendFile(path.join(publicDirectory, 'reference.html')));
+function pdfChatbotUrl() {
+  try {
+    const url = new URL(process.env.CHATBOT_URL);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    if (['localhost', '127.0.0.1'].includes(url.hostname) && Number(url.port || (url.protocol === 'https:' ? 443 : 80)) === port) return null;
+    return url.href;
+  } catch { return null; }
+}
+app.get('/api/integrations/pdf', (_req, res) => res.json({ configured: Boolean(pdfChatbotUrl()) }));
+app.get('/pdf-chatbot', (_req, res) => {
+  const url = pdfChatbotUrl();
+  if (!url) return res.status(503).type('text').send('Trợ lý PDF chưa có địa chỉ riêng. Cấu hình CHATBOT_URL tới ứng dụng PDF đang chạy ở cổng khác rồi khởi động lại PRO QUIZ.');
+  res.redirect(url);
+});
+
+function aiConfig() {
+  const nativeUrl = process.env.GEMINI_API_URL?.trim() || (process.env.OPENAI_API_URL?.includes(':generateContent') ? process.env.OPENAI_API_URL.trim() : '');
+  if (process.env.GEMINI_API_KEY?.trim() || nativeUrl) {
+    const key = process.env.GEMINI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
+    const model = process.env.GEMINI_MODEL?.trim() || nativeUrl.match(/\/models\/([^/:?]+):generateContent/)?.[1] || 'gemini-3.5-flash-lite';
+    if (key) return { provider: 'Gemini', key, model, url: nativeUrl || `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` };
+    return null;
+  }
+  const key = process.env.OPENAI_API_KEY?.trim();
+  if (key) return { provider: 'OpenAI', key, model: process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini' };
+  return null;
+}
+
+let lastAIConnectionAt = null;
+async function generateAI(messages, { jsonMode = false, maxTokens = 500 } = {}) {
+  const config = aiConfig();
+  if (!config) throw new Error('Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.');
+  if (config.provider === 'Gemini') {
+    const text = await generateGemini(config, messages, { jsonMode, maxTokens });
+    lastAIConnectionAt = new Date().toISOString();
+    return text;
+  }
+  let response;
+  try {
+    response = await fetch(process.env.OPENAI_API_URL || 'https://api.openai.com/v1/chat/completions', { method: 'POST', signal: AbortSignal.timeout(60000), headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.key}` }, body: JSON.stringify({ model: config.model, messages, ...(jsonMode && { response_format: { type: 'json_object' } }), max_completion_tokens: maxTokens, store: false }) });
+  } catch (error) {
+    // Do not return raw network/provider errors: they can contain request details.
+    throw new Error(error.name === 'TimeoutError' || error.name === 'AbortError' ? 'OpenAI quá thời gian phản hồi. Hãy thử lại.' : 'Không thể kết nối OpenAI. Kiểm tra mạng của backend rồi thử lại.');
+  }
+  if (!response.ok) {
+    const reasons = { 400: 'Kiểm tra OPENAI_MODEL và định dạng yêu cầu.', 401: 'OPENAI_API_KEY không hợp lệ.', 403: 'Khóa không có quyền truy cập model/project.', 404: 'Không tìm thấy model hoặc endpoint.', 429: 'Đã hết hạn mức hoặc bị giới hạn tần suất. Kiểm tra tài khoản OpenAI.' };
+    throw new Error(`OpenAI trả HTTP ${response.status}. ${reasons[response.status] || 'Dịch vụ chưa sẵn sàng. Hãy thử lại sau.'}`);
+  }
+  let data;
+  try { data = await response.json(); } catch { throw new Error('OpenAI trả phản hồi không hợp lệ. Hãy thử lại.'); }
+  const choice = data?.choices?.[0];
+  if (choice?.message?.refusal) throw new Error('OpenAI không thể xử lý nội dung này. Hãy kiểm tra lại đề.');
+  if (choice?.finish_reason === 'length') throw new Error('Phản hồi OpenAI bị cắt do giới hạn token. Hãy chia nhỏ đề hoặc chọn model phù hợp.');
+  const text = typeof choice?.message?.content === 'string' ? choice.message.content.trim() : '';
+  if (!text) throw new Error('OpenAI trả nội dung rỗng. Hãy kiểm tra model và thử lại.');
+  lastAIConnectionAt = new Date().toISOString();
+  return text;
+}
+
+function json(value, fallback) {
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
+function answerLabel(index) {
+  return index === null || index === undefined ? 'CHƯA XÁC NHẬN' : String.fromCharCode(65 + Number(index));
+}
+
+function mapQuestion(row, options = []) {
+  return {
+    id: row.id,
+    prompt: row.prompt,
+    sourceText: row.source_text,
+    setId: row.set_id,
+    options,
+    answerIndex: row.answer_index,
+    answerStatus: row.answer_status,
+    answerSource: row.answer_source,
+    aiSuggestionIndex: row.ai_suggestion_index,
+    aiSuggestionReason: row.ai_suggestion_reason
+  };
+}
+
+function getQuestion(id) {
+  const row = db.prepare('SELECT * FROM questions WHERE id = ? AND owner_id = ?').get(Number(id), ownerId());
+  if (!row) return null;
+  const options = db.prepare('SELECT option_index, text FROM options WHERE question_id = ? ORDER BY option_index').all(row.id).map((option) => option.text);
+  return mapQuestion(row, options);
+}
+
+function getStats() {
+  const row = db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN answer_status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed, SUM(CASE WHEN answer_status != 'confirmed' THEN 1 ELSE 0 END) AS unconfirmed FROM questions WHERE owner_id = ?`).get(ownerId());
+  const wrongCount = new Set(getWrongAnswers().map(question => question.id)).size;
+  const active = db.prepare("SELECT id FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC LIMIT 1").get(ownerId());
+  return { total: Number(row.total || 0), confirmed: Number(row.confirmed || 0), unconfirmed: Number(row.unconfirmed || 0), wrong: wrongCount, activeAttemptId: active?.id || null };
+}
+
+function getWrongAnswers() {
+  const rows = db.prepare(`SELECT wrong_answers.question_id, wrong_answers.selected_index, wrong_answers.attempt_id, wrong_answers.created_at FROM wrong_answers JOIN attempts ON attempts.id = wrong_answers.attempt_id WHERE attempts.status = 'completed' AND attempts.owner_id = ? ORDER BY wrong_answers.id DESC`).all(ownerId());
+  const entries = rows.map(row => ({ ...getQuestion(row.question_id), selectedIndex: row.selected_index, attemptId: row.attempt_id, wrongAt: row.created_at, attemptStatus: 'completed' }));
+  const active = db.prepare("SELECT id, question_order, answers, updated_at FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC, id DESC").all(ownerId());
+  for (const attempt of active) {
+    const answers = json(attempt.answers, {});
+    for (const id of json(attempt.question_order, [])) {
+      const question = getQuestion(id);
+      const selectedIndex = answers[id];
+      if (question?.answerStatus === 'confirmed' && validAnswer(question.answerIndex) && validAnswer(selectedIndex) && selectedIndex !== question.answerIndex) {
+        entries.push({ ...question, selectedIndex, attemptId: attempt.id, wrongAt: attempt.updated_at, attemptStatus: 'in_progress' });
+      }
+    }
+  }
+  return entries.sort((a,b) => b.wrongAt.localeCompare(a.wrongAt) || b.attemptId - a.attemptId);
+}
+
+function shuffle(items) {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function getAttempt(id, includeAnswer = false) {
+  const attempt = db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(id), ownerId());
+  if (!attempt) return null;
+  const questionOrder = json(attempt.question_order, []);
+  const optionOrders = json(attempt.option_orders, {});
+  const answers = json(attempt.answers, {});
+  const questions = questionOrder.map((questionId) => {
+    const question = getQuestion(questionId);
+    if (!question) return null;
+    const order = optionOrders[questionId] || [0, 1, 2, 3];
+    return { id: question.id, prompt: question.prompt, options: order.map((optionIndex) => ({ index: optionIndex, text: question.options[optionIndex] })), selectedIndex: answers[questionId] ?? null, answerStatus: question.answerStatus, ...(includeAnswer && { answerIndex: question.answerIndex }) };
+  }).filter(Boolean);
+  return { id: attempt.id, status: attempt.status, currentIndex: attempt.current_index, score: attempt.score, total: questions.length, questions, updatedAt: attempt.updated_at };
+}
+
+app.get('/api/stats', (_req, res) => res.json(getStats()));
+app.get('/api/dashboard', (_req, res) => {
+  const completed = db.prepare("SELECT question_order, score FROM attempts WHERE status = 'completed' AND owner_id = ?").all(ownerId());
+  const total = completed.reduce((sum, attempt) => sum + json(attempt.question_order, []).length, 0);
+  const correct = completed.reduce((sum, attempt) => sum + attempt.score, 0);
+  const recent = db.prepare('SELECT id, status, question_order, answers, score, updated_at FROM attempts WHERE owner_id = ? ORDER BY updated_at DESC, id DESC LIMIT 3').all(ownerId()).map(attempt => {
+    const ids = json(attempt.question_order, []);
+    const answers = json(attempt.answers, {});
+    return { id: attempt.id, status: attempt.status, total: ids.length, answered: ids.filter(id => answers[id] !== undefined && answers[id] !== null).length, score: attempt.score, updatedAt: attempt.updated_at };
+  });
+  res.json({ ...getStats(), completedAttempts: completed.length, accuracy: total ? Math.round(correct * 100 / total) : null, recent });
+});
+app.get('/api/ai/status', (_req, res) => {
+  const config = aiConfig();
+  res.json({ configured: Boolean(config), teacherEnabled: process.env.QUIZ_TEACHER_ENABLED === 'true', provider: config?.provider || 'AI', model: config?.model || null, connectionVerified: Boolean(config && lastAIConnectionAt), lastSuccessfulRequestAt: config ? lastAIConnectionAt : null });
+});
+
+app.post('/api/imports/preview', (req, res) => {
+  const parsed = parseQuizText(req.body.text);
+  parsed.questions = parsed.questions.map((question) => ({ ...question, id: randomUUID() }));
+  res.json({ ...parsed, aiAvailable: Boolean(aiConfig()), aiMessage: aiConfig() ? null : 'Chưa kết nối AI. Câu có đáp án nguồn vẫn được nhận diện chính xác.' });
+});
+
+app.post('/api/imports/file', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Chưa chọn tệp đề.' });
+  const extension = path.extname(req.file.originalname).toLowerCase();
+  try {
+    let text;
+    if (extension === '.txt') text = req.file.buffer.toString('utf8');
+    else if (extension === '.docx') text = (await mammoth.extractRawText({ buffer: req.file.buffer })).value;
+    else if (extension === '.pdf') {
+      const parser = new PDFParse({ data: req.file.buffer });
+      text = (await parser.getText()).text;
+      await parser.destroy();
+    } else return res.status(415).json({ error: 'Chỉ hỗ trợ TXT, DOCX và PDF có văn bản.' });
+    if (!text.trim()) return res.status(422).json({ error: 'Không tìm thấy văn bản trong tệp.' });
+    res.json({ text, fileName: req.file.originalname });
+  } catch (error) {
+    res.status(422).json({ error: `Không thể đọc tệp: ${error.message}` });
+  }
+});
+
+app.post('/api/imports/ai-preview', async (req, res) => {
+  const parsed = Array.isArray(req.body.questions)
+    ? { questions: req.body.questions, invalid: [], totalBlocks: req.body.questions.length }
+    : parseQuizText(req.body.text);
+  if (!parsed.questions.length) return res.status(400).json({ error: 'Không tìm thấy câu hỏi có đủ A–D.', invalid: parsed.invalid });
+  if (parsed.questions.length > 100) return res.status(400).json({ error: 'Mỗi lần phân tích tối đa 100 câu. Hãy chia nhỏ đề.' });
+  if (parsed.questions.some((question) => !question || typeof question !== 'object')) return res.status(400).json({ error: 'Dữ liệu câu hỏi không hợp lệ.' });
+  const questions = parsed.questions.map((question) => ({ ...question, id: question.id || randomUUID() }));
+  if (questions.some((question) => typeof question.id !== 'string' || question.id.length > 100 || typeof question.prompt !== 'string' || !question.prompt.trim() || !Array.isArray(question.options) || question.options.length !== 4 || question.options.some((option) => typeof option !== 'string' || !option.trim())) || new Set(questions.map((question) => question.id)).size !== questions.length) {
+    return res.status(400).json({ error: 'Câu hỏi phải có ID riêng, nội dung và đủ bốn lựa chọn A–D.' });
+  }
+  if (!aiConfig()) return res.status(503).json({ error: 'Chưa kết nối AI. Bạn vẫn có thể xem trước, chọn đáp án và xác nhận thủ công.', ...parsed, questions });
+  try {
+    const suggested = await suggestAnswers(questions.filter((question) => question.answerSource !== 'source' || !validAnswer(question.answerIndex)), generateAI);
+    const byId = new Map(suggested.map((question) => [question.id, question]));
+    res.json({ ...parsed, questions: questions.map((question) => byId.get(question.id) || question), aiMessage: 'AI đề xuất — chưa xác nhận. Đọc giải thích, sửa nếu cần và xác nhận từng câu trước khi chấm điểm.' });
+  } catch (error) {
+    res.status(502).json({ error: error.message || 'AI trả về dữ liệu không hợp lệ. Hãy thử lại.' });
+  }
+});
+
+app.post('/api/questions/import', (req, res) => {
+  const parsed = Array.isArray(req.body.questions)
+    ? { questions: req.body.questions, invalid: [], totalBlocks: req.body.questions.length }
+    : parseQuizText(req.body.text);
+  const insertQuestion = db.prepare('INSERT INTO questions (prompt, source_text, answer_index, answer_status, answer_source, ai_suggestion_index, ai_suggestion_reason, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const insertOption = db.prepare('INSERT INTO options (question_id, option_index, text) VALUES (?, ?, ?)');
+  const imported = [];
+  const validated = [];
+  for (const question of parsed.questions) {
+    if (!question || typeof question !== 'object') return res.status(400).json({ error: 'Dữ liệu câu hỏi không hợp lệ.' });
+    const prompt = typeof question.prompt === 'string' ? question.prompt.trim() : '';
+    const options = Array.isArray(question.options) ? question.options.map((option) => String(option || '').trim()) : [];
+    const candidate = question.answerIndex;
+    const hasAnswer = candidate !== null && candidate !== undefined && candidate !== '';
+    if (!prompt || options.length !== 4 || options.some((option) => !option) || (hasAnswer && !validAnswer(candidate))) return res.status(400).json({ error: 'Có câu không hợp lệ. Nội dung xem trước chưa được lưu; hãy kiểm tra câu và bốn lựa chọn.' });
+    const fromAI = question.answerSource === 'ai_suggestion' || question.aiSuggestionIndex != null || Boolean(question.aiSuggestionReason);
+    const explicitlyConfirmed = question.confirmed === true;
+    const answerIndex = hasAnswer && (explicitlyConfirmed || (!fromAI && question.answerSource === 'source')) ? candidate : null;
+    const answerStatus = answerIndex === null ? 'unconfirmed' : 'confirmed';
+    const answerSource = answerIndex === null ? (fromAI ? 'ai_suggestion' : 'not_provided') : (explicitlyConfirmed ? 'user' : 'source');
+    const sourceText = typeof question.sourceText === 'string' && question.sourceText.trim() ? question.sourceText.trim() : prompt;
+    const suggestionIndex = validAnswer(question.aiSuggestionIndex) ? question.aiSuggestionIndex : null;
+    const suggestionReason = typeof question.aiSuggestionReason === 'string' ? question.aiSuggestionReason.trim().slice(0, 6000) : null;
+    validated.push({ prompt, options, answerIndex, answerStatus, answerSource, sourceText, suggestionIndex, suggestionReason });
+  }
+  if (!validated.length) return res.status(400).json({ error: 'Không có câu hợp lệ để lưu.' });
+  db.exec('BEGIN');
+  try {
+    for (const question of validated) {
+      const result = insertQuestion.run(question.prompt, question.sourceText, question.answerIndex, question.answerStatus, question.answerSource, question.suggestionIndex, question.suggestionReason, ownerId());
+      question.options.forEach((text, optionIndex) => insertOption.run(result.lastInsertRowid, optionIndex, text));
+      imported.push(getQuestion(result.lastInsertRowid));
+    }
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  res.status(201).json({ ...parsed, imported });
+});
+
+app.use('/api/question-sets', require('./question-sets'));
+
+app.get('/api/questions', (_req, res) => {
+  const rows = db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId());
+  res.json(rows.map((row) => getQuestion(row.id)));
+});
+
+app.get('/api/questions/:id', (req, res, next) => {
+  if (req.params.id === 'export') return next();
+  const question = getQuestion(req.params.id);
+  if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
+  res.json(question);
+});
+
+app.patch('/api/questions/:id', (req, res) => {
+  const question = getQuestion(req.params.id);
+  if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
+  const answerIndex = req.body.answerIndex;
+  const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : question.prompt;
+  const options = Array.isArray(req.body.options) ? req.body.options.map((option) => String(option || '').trim()) : question.options;
+  if (!validAnswer(answerIndex)) return res.status(400).json({ error: 'Đáp án phải là A, B, C hoặc D.' });
+  if (!prompt || options.length !== 4 || options.some((option) => !option)) return res.status(400).json({ error: 'Câu hỏi cần nội dung và đủ bốn lựa chọn.' });
+  const updateQuestion = db.prepare("UPDATE questions SET prompt = ?, answer_index = ?, answer_status = 'confirmed', answer_source = 'user', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
+  updateQuestion.run(prompt, answerIndex, question.id);
+  db.prepare('DELETE FROM options WHERE question_id = ?').run(question.id);
+  const insertOption = db.prepare('INSERT INTO options (question_id, option_index, text) VALUES (?, ?, ?)');
+  options.forEach((text, optionIndex) => insertOption.run(question.id, optionIndex, text));
+  res.json(getQuestion(question.id));
+});
+
+app.patch('/api/questions/:id/content', (req, res) => {
+  const question = getQuestion(req.params.id);
+  if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
+  const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : '';
+  const options = Array.isArray(req.body.options) ? req.body.options.map((option) => String(option || '').trim()) : [];
+  if (!prompt || options.length !== 4 || options.some((option) => !option)) return res.status(400).json({ error: 'Câu hỏi cần nội dung và đủ bốn lựa chọn.' });
+  db.prepare("UPDATE questions SET prompt = ?, answer_index = NULL, answer_status = 'unconfirmed', answer_source = 'not_provided', ai_suggestion_index = NULL, ai_suggestion_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(prompt, question.id);
+  db.prepare('DELETE FROM options WHERE question_id = ?').run(question.id);
+  const insertOption = db.prepare('INSERT INTO options (question_id, option_index, text) VALUES (?, ?, ?)');
+  options.forEach((text, optionIndex) => insertOption.run(question.id, optionIndex, text));
+  res.json(getQuestion(question.id));
+});
+
+app.post('/api/questions/:id/ai-suggest', async (req, res) => {
+  const question = getQuestion(req.params.id);
+  if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
+  if (!aiConfig()) return res.status(503).json({ error: 'Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.' });
+
+  try {
+    const [suggestion] = await suggestAnswers([{ ...question, id: String(question.id) }], generateAI);
+    const current = getQuestion(question.id);
+    if (!current || current.prompt !== question.prompt || JSON.stringify(current.options) !== JSON.stringify(question.options)) return res.status(409).json({ error: 'Câu hỏi đã thay đổi trong khi AI phân tích. Hãy thử lại.' });
+    db.prepare("UPDATE questions SET ai_suggestion_index = ?, ai_suggestion_reason = ?, answer_source = CASE WHEN answer_status = 'confirmed' THEN answer_source ELSE 'ai_suggestion' END, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(suggestion.aiSuggestionIndex, suggestion.aiSuggestionReason, question.id);
+    res.json({ ...getQuestion(question.id), needsReview: suggestion.needsReview });
+  } catch (error) { res.status(502).json({ error: error.message }); }
+});
+
+app.delete('/api/questions/all', (_req, res) => {
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM attempts WHERE owner_id = ?').run(ownerId());
+    db.prepare('DELETE FROM questions WHERE owner_id = ?').run(ownerId());
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  res.status(204).end();
+});
+
+app.delete('/api/progress', (_req, res) => {
+  db.prepare("DELETE FROM attempts WHERE status = 'in_progress' AND owner_id = ?").run(ownerId());
+  res.status(204).end();
+});
+
+app.delete('/api/questions/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM questions WHERE id = ? AND owner_id = ?').run(Number(req.params.id), ownerId());
+  if (result.changes === 0) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
+  res.status(204).end();
+});
+
+app.get('/api/questions/export', (_req, res) => {
+  const questions = db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId()).map((row) => getQuestion(row.id));
+  const text = questions.map((question, index) => {
+    const options = question.options.map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`).join('\n');
+    const answer = question.answerIndex === null ? 'CHƯA XÁC NHẬN' : String.fromCharCode(65 + question.answerIndex);
+    return `${index + 1}. ${question.prompt}\n${options}\nĐáp án: ${answer}`;
+  }).join('\n\n');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="pro-quiz-bank.txt"');
+  res.send(text);
+});
+
+app.get('/api/wrong-answers/export', (_req, res) => {
+  const rows = getWrongAnswers();
+  const text = rows.map((question, index) => {
+    const options = question.options.map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`).join('\n');
+    return `Lượt ${question.attemptId} · Câu ${index + 1}: ${question.prompt}\n${options}\nBạn chọn: ${answerLabel(question.selectedIndex)} · Đáp án đúng: ${answerLabel(question.answerIndex)}`;
+  }).join('\n\n');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="pro-quiz-wrong-history.txt"');
+  res.send(text);
+});
+
+app.get('/api/wrong-answers', (_req, res) => {
+  res.json(getWrongAnswers());
+});
+
+app.post('/api/attempts', (req, res) => {
+  const requestedIds = Array.isArray(req.body.questionIds) ? req.body.questionIds.map(Number).filter(Number.isInteger) : null;
+  const rows = requestedIds ? db.prepare(`SELECT id FROM questions WHERE owner_id = ? AND answer_status = 'confirmed' AND id IN (${requestedIds.map(() => '?').join(',')}) ORDER BY id`).all(ownerId(), ...requestedIds) : db.prepare("SELECT id FROM questions WHERE answer_status = 'confirmed' AND owner_id = ? ORDER BY id").all(ownerId());
+  if (requestedIds && rows.length !== new Set(requestedIds).size) return res.status(400).json({ error: 'Danh sách câu hỏi không hợp lệ hoặc không thuộc tài khoản của bạn.' });
+  if (rows.length === 0) return res.status(400).json({ error: 'Cần ít nhất một câu đã xác nhận đáp án để bắt đầu test.' });
+  const questionOrder = shuffle(rows.map((row) => row.id));
+  const optionOrders = {};
+  questionOrder.forEach((questionId) => { optionOrders[questionId] = shuffle([0, 1, 2, 3]); });
+  const result = db.prepare('INSERT INTO attempts (question_order, option_orders, owner_id) VALUES (?, ?, ?)').run(JSON.stringify(questionOrder), JSON.stringify(optionOrders), ownerId());
+  res.status(201).json(getAttempt(result.lastInsertRowid, true));
+});
+
+app.get('/api/attempts/active', (_req, res) => {
+  const row = db.prepare("SELECT id FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC LIMIT 1").get(ownerId());
+  res.json(row ? getAttempt(row.id, true) : null);
+});
+
+app.get('/api/attempts/:id', (req, res) => {
+  const attempt = getAttempt(req.params.id, true);
+  if (!attempt) return res.status(404).json({ error: 'Không tìm thấy lượt làm bài.' });
+  res.json(attempt);
+});
+
+app.patch('/api/attempts/:id/answer', (req, res) => {
+  const attempt = db.prepare("SELECT * FROM attempts WHERE id = ? AND status = 'in_progress' AND owner_id = ?").get(Number(req.params.id), ownerId());
+  if (!attempt) return res.status(404).json({ error: 'Lượt làm bài không tồn tại hoặc đã kết thúc.' });
+  const questionId = Number(req.body.questionId);
+  const selectedIndex = req.body.selectedIndex === null ? null : Number(req.body.selectedIndex);
+  const questionOrder = json(attempt.question_order, []);
+  if (!questionOrder.includes(questionId) || (selectedIndex !== null && (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex > 3))) return res.status(400).json({ error: 'Lựa chọn không hợp lệ.' });
+  const answers = json(attempt.answers, {});
+  answers[questionId] = selectedIndex;
+  const currentIndex = Math.max(0, Math.min(questionOrder.length - 1, Number(req.body.currentIndex) || 0));
+  db.prepare('UPDATE attempts SET answers = ?, current_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(JSON.stringify(answers), currentIndex, attempt.id);
+  res.json(getAttempt(attempt.id, true));
+});
+
+app.post('/api/attempts/:id/submit', (req, res) => {
+  const attempt = db.prepare("SELECT * FROM attempts WHERE id = ? AND status = 'in_progress' AND owner_id = ?").get(Number(req.params.id), ownerId());
+  if (!attempt) return res.status(404).json({ error: 'Lượt làm bài không tồn tại hoặc đã kết thúc.' });
+  const answers = json(attempt.answers, {});
+  const questionOrder = json(attempt.question_order, []);
+  let score = 0;
+  const wrong = [];
+  questionOrder.forEach((questionId) => {
+    const question = getQuestion(questionId);
+    if (!question || question.answerStatus !== 'confirmed' || !validAnswer(question.answerIndex)) return;
+    if (answers[questionId] !== undefined && answers[questionId] === question.answerIndex) score += 1;
+    else wrong.push({ questionId, selectedIndex: answers[questionId] ?? null });
+  });
+  db.prepare("UPDATE attempts SET status = 'completed', score = ?, updated_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(score, attempt.id);
+  const addWrong = db.prepare('INSERT OR REPLACE INTO wrong_answers (attempt_id, question_id, selected_index) VALUES (?, ?, ?)');
+  wrong.forEach((item) => addWrong.run(attempt.id, item.questionId, item.selectedIndex));
+  res.json({ ...getAttempt(attempt.id, true), score, wrongCount: wrong.length });
+});
+
+app.post('/api/attempts/:id/retry-wrong', (req, res) => {
+  const attemptId = Number(req.params.id);
+  if (!db.prepare('SELECT id FROM attempts WHERE id = ? AND owner_id = ?').get(attemptId, ownerId())) return res.status(404).json({ error: 'Không tìm thấy lượt làm bài.' });
+  const ids = [...new Set(getWrongAnswers().filter(question => question.attemptId === attemptId && question.answerStatus === 'confirmed' && validAnswer(question.answerIndex)).map(question => question.id))];
+  if (!ids.length) return res.status(400).json({ error: 'Lượt này chưa có câu đã trả lời sai và còn đáp án xác nhận để ôn.' });
+  const questionOrder = shuffle(ids);
+  const optionOrders = {};
+  questionOrder.forEach((questionId) => { optionOrders[questionId] = shuffle([0, 1, 2, 3]); });
+  const result = db.prepare('INSERT INTO attempts (question_order, option_orders, owner_id) VALUES (?, ?, ?)').run(JSON.stringify(questionOrder), JSON.stringify(optionOrders), ownerId());
+  res.status(201).json(getAttempt(result.lastInsertRowid, true));
+});
+
+app.get('/api/attempts/:attemptId/questions/:questionId/chat', (req, res) => {
+  const attempt = getAttempt(req.params.attemptId);
+  if (!attempt || !attempt.questions.some(question => question.id === Number(req.params.questionId))) return res.status(404).json({ error: 'Không tìm thấy ngữ cảnh câu hỏi.' });
+  const messages = db.prepare('SELECT role, content, created_at AS createdAt FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(Number(req.params.attemptId), Number(req.params.questionId));
+  res.json(messages);
+});
+
+app.post('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res) => {
+  if (process.env.QUIZ_TEACHER_ENABLED !== 'true') return res.status(403).json({ error: 'Giáo viên AI đang tạm khóa.' });
+  const message = typeof req.body.message === 'string' ? req.body.message.trim().slice(0, 1000) : '';
+  const question = getQuestion(req.params.questionId);
+  const attempt = db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(req.params.attemptId), ownerId());
+  if (!attempt || !question || !json(attempt.question_order, []).includes(question.id)) return res.status(404).json({ error: 'Không tìm thấy ngữ cảnh câu hỏi.' });
+  if (!message) return res.status(400).json({ error: 'Hãy nhập câu hỏi cho AI.' });
+  if (!aiConfig()) return res.status(503).json({ error: 'Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.' });
+
+  const history = db.prepare('SELECT role, content FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(attempt.id, question.id);
+  const system = 'Bạn là gia sư trắc nghiệm. Chỉ giải thích đúng câu hỏi được cung cấp, ưu tiên gợi ý trước khi tiết lộ đáp án. Trả lời bằng tiếng Việt, giữ nguyên nội dung tiếng Anh nếu cần.';
+  const order = json(attempt.option_orders, {})[question.id] || [0, 1, 2, 3];
+  const selectedIndex = json(attempt.answers, {})[question.id];
+  const displayedAnswer = order.indexOf(question.answerIndex);
+  const displayedSelection = order.indexOf(selectedIndex);
+  const userContext = `Câu hỏi: ${question.prompt}\n${order.map((optionIndex, index) => `${answerLabel(index)}. ${question.options[optionIndex]}`).join('\n')}\nTrạng thái bài: ${attempt.status}\nTrạng thái đáp án: ${question.answerStatus}\nĐáp án đã xác nhận: ${question.answerStatus === 'confirmed' && displayedAnswer >= 0 ? answerLabel(displayedAnswer) : 'Chưa xác nhận'}\nNgười học chọn: ${displayedSelection >= 0 ? answerLabel(displayedSelection) : 'Chưa chọn'}\nTrước khi người học chọn, ưu tiên gợi ý; sau khi chọn hoặc yêu cầu giải thích, dùng đáp án đã xác nhận. Không tự chốt đáp án chưa xác nhận.`;
+  let reply;
+  try { reply = await generateAI([{ role: 'system', content: `${system}\n\nNgữ cảnh câu hỏi đang học:\n${userContext}` }, ...history, { role: 'user', content: message }], { maxTokens: 500 }); }
+  catch (error) { return res.status(502).json({ error: error.message }); }
+  const save = db.prepare('INSERT INTO chat_messages (attempt_id, question_id, role, content) VALUES (?, ?, ?, ?)');
+  save.run(attempt.id, question.id, 'user', message);
+  save.run(attempt.id, question.id, 'assistant', reply);
+  res.json({ role: 'assistant', content: reply });
+});
+
+app.use((req, res) => res.redirect('/'));
+if (require.main === module) app.listen(port, () => console.log(`PRO QUIZ APP đang chạy tại http://localhost:${port}`));
+module.exports = app;

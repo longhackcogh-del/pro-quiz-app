@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRO QUIZ APP | Future Learning</title>
+<link rel="stylesheet" href="/prototype-theme.css"><link rel="stylesheet" href="/redesign.css">
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+ <div class="brand"><img id="brandLogo" src="/assets/fit-logo.png" alt="FIT logo"><div><strong>PRO QUIZ APP</strong><small>FUTURE LEARNING SYSTEM</small></div></div>
+ <div class="nav-label">KHÔNG GIAN HỌC TẬP</div>
+ <nav class="nav" id="nav">
+  <button class="active" data-view="v-menu"><span>⌂</span>Tổng quan</button>
+  <button data-view="v-list"><span>▤</span>Kho câu hỏi</button>
+  <button data-view="v-paste"><span>⇧</span>Nhập tài liệu</button>
+  <button data-view="v-quiz"><span>▷</span>Luyện tập</button>
+  <button data-view="v-wrong"><span>↻</span>Lịch sử câu sai</button>
+  <button data-view="v-pdf"><span>▧</span>Trợ lý tài liệu PDF</button>
+ </nav>
+ <div class="nav-label">HỆ THỐNG</div>
+ <nav class="nav"><button data-view="v-settings"><span>⚙</span>Cài đặt & hướng dẫn</button></nav>
+ <div class="side-bottom"><div class="user-mini"><div class="avatar" id="sideAvatar">G</div><div><b id="sideName">Khách học tập</b><div class="small muted" id="sideEmail">Chưa đăng nhập</div></div></div></div>
+</aside>
+<main class="main">
+ <div class="topbar"><div class="crumb">FIT / <b id="view-title">Tổng quan</b></div><div class="top-actions"><span class="pill" id="badge-question-count">Đang tải…</span><button class="btn ghost" id="account-button" onclick="openLogin()">Đăng nhập Google</button><button class="btn primary" onclick="navigateTo('v-quiz')">▶ Bắt đầu học</button></div></div>
+
+ <section class="view-content page active" id="v-menu">
+  <div class="hero">
+   <div class="hero-main"><div class="eyebrow">LEARN SMARTER · GO FURTHER</div><h2>Chinh phục kiến thức.<br><span style="color:var(--cyan)">Bứt phá tương lai.</span></h2><p>Không chỉ làm trắc nghiệm. Hãy biến mỗi câu hỏi thành một bước tiến trong hành trình học tập của bạn.</p><div class="hero-buttons"><button class="btn primary" onclick="navigateTo('v-quiz')">▶ Bắt đầu luyện tập</button><button class="btn ghost" onclick="navigateTo('v-paste')">＋ Nhập tài liệu</button></div></div>
+   <div class="hero-side"><div class="ai-orb">✦</div><div><div class="eyebrow">AI STUDY COMPANION</div><h3 style="font-size:21px;margin:9px 0">Trợ lý học tập thông minh</h3><p class="muted small">Hỏi đáp theo ngữ cảnh câu hỏi, giải thích kiến thức và hỗ trợ ôn tập.</p><button class="btn" onclick="toggleStudyChat(true)">Khám phá trợ lý AI ↗</button></div></div>
+  </div>
+  <div class="grid stats">
+   <div class="stat"><div class="stat-icon">▤</div><div><small>Tổng câu hỏi</small><strong id="statTotal">—</strong></div></div>
+   <div class="stat"><div class="stat-icon">✓</div><div><small>Đã xác nhận</small><strong id="statConfirmed">—</strong></div></div>
+   <div class="stat"><div class="stat-icon">◷</div><div><small>Bài đã luyện</small><strong id="statSessions">—</strong></div></div>
+   <div class="stat"><div class="stat-icon">↗</div><div><small>Tỷ lệ chính xác</small><strong id="statAccuracy">—</strong></div></div>
+  </div>
+  <div class="section-title"><h2>Lối tắt học tập</h2><span></span></div>
+  <div class="grid quick">
+   <div class="quick-card" onclick="navigateTo('v-quiz')"><div class="qicon">🎯</div><b>Luyện tập ngay</b><small>Bắt đầu một lượt làm bài mới</small></div>
+   <div class="quick-card" onclick="navigateTo('v-paste')"><div class="qicon">📥</div><b>Nhập câu hỏi</b><small>Tải lên PDF, DOCX, TXT hoặc dán đề</small></div>
+   <div class="quick-card" onclick="navigateTo('v-list')"><div class="qicon">🗂️</div><b>Kho câu hỏi</b><small>Quản lý và xác nhận đáp án</small></div>
+   <div class="quick-card" onclick="navigateTo('v-wrong')"><div class="qicon">🔁</div><b>Ôn câu sai</b><small>Học lại những phần chưa vững</small></div>
+  </div>
+  <div class="section-title"><h2>Tiếp tục hành trình</h2><span></span></div>
+  <div class="grid content-grid">
+<div class="panel"><h3>Bài luyện tập gần đây</h3><div id="recent-attempts"><p class="empty">Đang tải tiến trình…</p></div></div>
+   <div class="panel"><h3>Trạng thái AI</h3><div class="row-item"><div class="stat-icon">✦</div><div class="grow"><b>AI phân tích đáp án</b><small><span id="dashboard-ai-status">Đang kiểm tra cấu hình…</span></small></div></div><div class="row-item"><div class="stat-icon">◉</div><div class="grow"><b>Giáo viên AI</b><small>Hỏi đáp theo từng câu trong lượt luyện tập</small></div></div><button class="btn" style="width:100%;margin-top:14px" onclick="navigateTo('v-settings')">Kiểm tra cấu hình AI</button></div>
+  </div>
+ </section>
+
+ <section class="view-content page" id="v-list">
+  <div class="page-head"><div><h1>Kho câu hỏi</h1><p>Quản lý ngân hàng câu hỏi tập trung, tìm kiếm và chỉnh sửa nhanh chóng.</p></div><div class="right"><button class="btn primary" onclick="navigateTo('v-paste')">＋ Nhập câu hỏi</button></div></div>
+  <div class="bank-stats">
+   <div class="bank-stat"><span class="bank-stat-icon blue">▤</span><div><b id="bankTotal">0</b><small>Tổng câu hỏi</small></div></div>
+   <div class="bank-stat"><span class="bank-stat-icon green">✓</span><div><b id="bankConfirmed">0</b><small>Đã xác nhận</small></div></div>
+   <div class="bank-stat"><span class="bank-stat-icon amber">◷</span><div><b id="bankPending">0</b><small>Chờ xác nhận</small></div></div>
+   <div class="bank-stat"><span class="bank-stat-icon purple">✦</span><div><b id="bankAccuracy">—</b><small>Tỷ lệ xác nhận</small></div></div>
+  </div>
+  <div class="bank-actions"><button class="btn" onclick="exportDataToTxt()">↓ Xuất kho TXT</button></div><div class="bank-filters">
+   <div class="question-set-tools"><label>Bộ câu hỏi <select class="field" id="question-set-filter" onchange="bankFilterChanged()"><option value="all">Tất cả bộ câu hỏi</option><option value="none">Chưa phân loại</option></select></label><button class="btn" onclick="createQuestionSet()">＋ Tạo bộ</button><button class="btn" onclick="renameQuestionSet()">Đổi tên</button><button class="btn danger" onclick="deleteQuestionSet()">Xóa bộ</button><button class="btn primary" onclick="practiceQuestionSet()">Luyện tập bộ này</button></div>
+   <label class="bank-search">⌕ <input id="bank-search" placeholder="Tìm nội dung, mã câu hỏi hoặc đáp án..." oninput="filterQuestionBank()"><button onclick="clearBankSearch()" title="Xóa tìm kiếm">×</button></label>
+   <select class="field" id="bank-filter" onchange="bankFilterChanged()"><option value="all">Tất cả trạng thái</option><option value="confirmed">Đã xác nhận</option><option value="unconfirmed">Chờ xác nhận</option></select>
+   <select class="field" id="bankSort" onchange="bankFilterChanged()"><option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option><option value="idAsc">Mã câu tăng dần</option><option value="idDesc">Mã câu giảm dần</option></select>
+  </div>
+  <div class="bank-bulkbar">
+   <label class="select-all"><input type="checkbox" id="selectPage" onchange="toggleSelectPage(this.checked)"> Chọn trang này</label>
+   <span class="selected-count" id="selectedCount">Đã chọn 0 câu</span>
+   <div class="bulk-actions"><select class="field" id="question-set-target" aria-label="Bộ đích"><option value="none">Chưa phân loại</option></select><button class="btn" onclick="moveSelectedQuestions()">Chuyển vào bộ</button><button class="btn danger" onclick="bulkDelete()">▣ Xóa đã chọn</button><button class="btn" onclick="bulkConfirm()">✓ Xác nhận đã chọn</button></div>
+   <label class="per-page">Hiển thị <select class="field" id="pageSize" onchange="changePageSize()"><option>20</option><option>50</option><option>100</option></select> câu/trang</label>
+  </div>
+  <div id="scroller-questions-list" class="bank-table-wrap"><table class="bank-table"><thead><tr><th class="check-col"></th><th>MÃ</th><th>NỘI DUNG CÂU HỎI</th><th>ĐÁP ÁN ĐÚNG</th><th>TRẠNG THÁI</th><th>THAO TÁC</th></tr></thead><tbody id="bankTableBody"></tbody></table><div class="empty" id="bank-empty" hidden>Không tìm thấy câu hỏi phù hợp.</div></div>
+  <div class="bank-pagination"><span id="bankRange">Hiển thị 0 câu</span><div class="page-buttons" id="pageButtons"></div><label class="jump-page">Đến trang <input class="field" type="number" id="jumpPage" min="1" value="1"><span id="pageCount">/ 1</span><button class="btn primary" onclick="jumpToPage()">Đi</button></label></div>
+ </section>
+
+ <section class="view-content page" id="v-paste">
+  <div class="page-head"><div><h1>Nhập tài liệu</h1><p>Đưa đề trắc nghiệm vào hệ thống, kiểm tra rồi mới lưu vào kho.</p></div><div class="right"><button class="btn" onclick="openImportGuide()">✦ Chuẩn hóa tài liệu bằng Gemini</button></div></div>
+  <div class="import-workflow-choices"><div class="word-workflow textbook-workflow"><div><span class="tag">01 · GIÁO TRÌNH / TÀI LIỆU LÝ THUYẾT</span><h3>Tạo câu hỏi ôn thi theo chương</h3><p>Gửi giáo trình cho Gemini để lọc trọng tâm, tạo câu hỏi A–D và xuất một file Word cho mỗi chương.</p></div><button class="btn primary" onclick="openTextbookGuide()">Tạo câu hỏi từ giáo trình ↗</button></div><div class="word-workflow"><div><span class="tag">02 · ĐỀ / CÂU HỎI CÓ SẴN</span><h3>Chuẩn hóa tài liệu bằng Gemini</h3><p>Sao chép câu lệnh → gửi cùng tài liệu cho Gemini → tải file .docx → đưa lên web để tự xem trước câu hỏi và đáp án.</p></div><button class="btn" onclick="openImportGuide()">Hướng dẫn & sao chép câu lệnh ↗</button></div></div>
+  <div class="grid content-grid">
+   <div class="panel"><h3>01 · Tải tài liệu lên</h3><label class="upload-zone" style="display:block;cursor:pointer"><div style="font-size:32px">⇧</div><strong>Kéo thả tài liệu hoặc nhấn để chọn</strong><p>Hỗ trợ TXT, DOCX, PDF có văn bản · Tối đa 10 MB</p><p>File Word (.docx) đã chuẩn hóa sẽ tự mở bản xem trước.</p><input type="file" id="file-selector-input" accept=".txt,.docx,.pdf" hidden onchange="processLocalFileParsing(event)"><span class="tag" id="file-upload-status-label">Chưa chọn tệp</span></label>
+    <div style="text-align:center;color:var(--muted);padding:12px">hoặc dán nội dung đề bài</div><textarea class="textarea" id="paste-input" placeholder="Câu 1: ...&#10;A. ...&#10;B. ...&#10;C. ...&#10;D. ...&#10;Đáp án: A"></textarea>
+    <div style="display:flex;gap:9px;margin-top:12px;flex-wrap:wrap"><button class="btn primary" onclick="handleImportQuestionsManual()">Xem trước câu hỏi</button><button class="btn" id="btn-ai-import" onclick="handleAIQuestionAnalysis()">✦ AI phân tích đáp án</button></div>
+   </div>
+   <div class="panel"><h3>Quy trình nhập đề</h3><div class="row-item"><span class="tag">01</span><div class="grow"><b>Tách câu hỏi</b><small>Giữ nguyên nội dung và các lựa chọn A–D từ tài liệu.</small></div></div><div class="row-item"><span class="tag">02</span><div class="grow"><b>Kiểm tra đáp án</b><small>AI có thể đề xuất; người học vẫn là người xác nhận cuối cùng.</small></div></div><div class="row-item"><span class="tag">03</span><div class="grow"><b>Lưu vào kho c? nh?n</b><small>Câu chưa xác nhận được giữ ở trạng thái chờ duyệt.</small></div></div><div class="warning" style="padding:12px;border-radius:12px;background:#40351e;color:#ffda91;font-size:12px">Lưu ý: PDF scan chưa được OCR trong luồng nhập đề chính.</div></div>
+  </div>
+  <div id="import-preview" hidden style="margin-top:18px"></div>
+ </section>
+
+ <section class="view-content page" id="v-quiz">
+  <div class="page-head"><div><h1>Không gian luyện tập</h1><p>Tập trung vào từng câu hỏi, nhận phản hồi và hỏi AI ngay khi cần.</p></div><div class="right"><button class="btn" onclick="createNewPractice()">↻ Tạo lượt mới</button></div></div>
+  <div class="practice-layout">
+   <div class="practice-card"><div id="quiz-score-lbl" class="tag">Điểm số: 0</div><div class="practice-meta"><span id="practiceSubject">KHO CÂU HỎI CHUNG</span><span id="quiz-progress-lbl">Đang tải…</span></div><div class="progress"><i id="practiceBar" style="width:0%"></i></div><div class="question-number" id="practiceNumber">QUESTION</div><h2 id="quiz-question-container">Đang tải câu hỏi…</h2><div id="quiz-options-container"></div><div id="practiceFeedback" class="muted small" style="margin-top:12px;min-height:20px"></div><div style="display:flex;justify-content:space-between;margin-top:20px"><button class="btn ghost" id="quiz-prev-btn" onclick="handleQuizPrev()">← Câu trước</button><button class="btn ghost" onclick="abortQuizSession()">Lưu &amp; Thoát</button></div></div>
+   <div class="panel practice-focus"><div class="ai-orb">✦</div><h3>Không gian luyện tập tập trung</h3><p class="muted">Giáo viên AI luôn sẵn sàng hỗ trợ bạn qua bong bóng chat ở góc dưới bên phải.</p><span class="tag">AI STUDY COMPANION</span></div>
+  </div>
+ </section>
+
+ <section class="view-content page" id="v-wrong">
+  <div class="page-head"><div><h1>Lịch sử câu sai</h1><p>Nhìn lại lỗi sai để biến chúng thành kiến thức vững chắc.</p></div><div class="right"><button class="btn primary" onclick="practiceAllWrong()">Ôn các câu sai</button></div></div>
+<div class="bank-actions"><button class="btn" onclick="exportWrongLogToTxt()">↓ Xuất lịch sử TXT</button></div><div id="scroller-wrong-list" class="question-list"></div>
+ </section>
+
+ <section class="view-content page" id="v-pdf">
+  <div class="page-head"><div><h1>Trợ lý tài liệu PDF</h1><p>Khu vực riêng dành cho hỏi đáp và khai thác kiến thức từ tài liệu.</p></div></div>
+  <div class="panel" style="max-width:800px;margin:auto;text-align:center;padding:42px"><div class="ai-orb" style="margin:0 auto 18px">▧</div><h2>Đọc tài liệu. Hỏi sâu. Hiểu bản chất.</h2><p class="muted">Mở không gian trợ lý PDF riêng để tải tài liệu, tóm tắt và đặt câu hỏi theo nội dung.</p><a class="btn primary" id="pdf-link" href="/pdf-chatbot" target="_blank" rel="noopener">Mở trợ lý PDF ↗</a><p class="small muted"><span id="pdf-status">Đang kiểm tra địa chỉ trợ lý…</span></p></div>
+ </section>
+
+ <section class="view-content page" id="v-settings">
+  <div class="page-head"><div><h1>Cài đặt & hướng dẫn</h1><p>Quản lý kết nối AI, tài khoản và dữ liệu học tập.</p></div></div>
+  <div class="grid content-grid">
+   <div class="panel"><h3>Tài khoản</h3><div class="row-item"><div class="stat-icon">G</div><div class="grow"><b>Đăng nhập bằng Google</b><small id="account-status">Đang kiểm tra cấu hình Google…</small></div><button class="btn" onclick="openLogin()">Đăng nhập</button></div><h3 style="margin-top:24px">Trạng thái AI</h3><div class="row-item"><div class="grow"><b>Backend AI</b><small id="ai-status-label">Đang kiểm tra cấu hình…</small></div><span id="ai-verified-badge" class="tag warn">Chưa xác minh</span></div><button class="btn primary" id="ai-status-check">Kiểm tra cấu hình</button><p><a href="#" id="ai-config-help" class="small muted">Hướng dẫn cấu hình AI</a></p></div>
+   <div class="panel"><h3>Hướng dẫn nhanh</h3><button class="btn ghost" onclick="navigateTo('v-help')">Xem mẫu định dạng A–D →</button><div class="row-item"><div class="grow"><b>Định dạng câu hỏi</b><small>Câu hỏi + bốn lựa chọn A, B, C, D. Mỗi câu nên có đáp án rõ ràng.</small></div></div><div class="row-item"><div class="grow"><b>Xác nhận đáp án</b><small>Chỉ câu đã xác nhận mới được đưa vào lượt luyện tập và chấm điểm.</small></div></div><div class="row-item"><div class="grow"><b>Quản lý dữ liệu</b><small>Reset tiến trình hoặc xóa toàn bộ dữ liệu cần xác nhận riêng.</small></div></div></div>
+  </div>
+  <div class="panel" style="margin-top:16px"><h3>Quản lý dữ liệu</h3><p class="muted small">Các thao tác nguy hiểm được tách khỏi luồng học tập.</p><button class="btn" onclick="resetLearningProgress()">Reset tiến trình</button> <button class="btn danger" onclick="hardResetDatabase()">Xóa toàn bộ dữ liệu</button></div>
+ </section>
+<section class="view-content page" id="v-result"><div class="panel result-panel"><div class="ai-orb">✓</div><h1>Lượt làm bài kết thúc!</h1><p id="result-score-summary"></p><div class="hero-buttons"><button class="btn primary" id="btn-retest-incorrect-only" onclick="retestIncorrectOnly()">Ôn các câu vừa làm sai</button><button class="btn" onclick="createNewPractice()">Luyện tập lượt mới</button><button class="btn ghost" onclick="backToMenu()">Về tổng quan</button></div></div></section>
+<section class="view-content page" id="v-edit"><div class="page-head"><div><h1>Hiệu chỉnh câu hỏi</h1><p>Chỉnh nội dung, bốn lựa chọn và xác nhận đáp án.</p></div></div><div class="panel"><label for="edit-index">Số thứ tự câu hỏi</label><input class="field" type="text" id="edit-index"><label for="edit-content">Nội dung câu hỏi và đáp án A–D</label><textarea class="textarea" id="edit-content" rows="10"></textarea><div class="hero-buttons"><button class="btn ghost" onclick="navigateTo('v-list')">Hủy bỏ</button><button class="btn primary" onclick="handleEditSave()">Lưu thay đổi</button></div></div></section>
+<section class="view-content page" id="v-delete"><div class="panel"><h1>Xóa câu hỏi</h1><label for="delete-index">Số thứ tự câu hỏi cần xóa</label><input class="field" type="text" id="delete-index"><div class="hero-buttons"><button class="btn ghost" onclick="backToMenu()">Hủy bỏ</button><button class="btn danger" onclick="handleDeleteAction()">Xóa câu hỏi</button></div></div></section>
+<section class="view-content page" id="v-help"><div class="page-head"><div><h1>Hướng dẫn sử dụng</h1><p>Nhập tài liệu, kiểm tra đáp án và luyện tập.</p></div></div><div class="grid content-grid"><div class="panel"><h3>Định dạng câu hỏi</h3><pre>Câu 1: Thủ đô nước Việt Nam là gì?
+A. Thành phố Hồ Chí Minh
+B. Đà Nẵng
+C. Hà Nội
+D. Hải Phòng
+Đáp án: C</pre><p class="muted">Có thể nhập câu chưa có đáp án. Chọn đáp án và xác nhận trước khi luyện tập.</p></div><div class="panel"><h3>Quy trình học</h3><p>1. Tải TXT, DOCX, PDF có văn bản hoặc dán đề.</p><p>2. Xem trước, chỉnh sửa và kiểm tra đáp án. AI chỉ đề xuất, không tự xác nhận.</p><p>3. Lưu vào kho c? nh?n và luyện tập. Khi chọn đáp án, hệ thống tự lưu, phản hồi rồi chuyển câu.</p><p>4. Xem kết quả và ôn lại câu sai.</p><button class="btn" onclick="navigateTo('v-settings')">Cài đặt & hướng dẫn AI</button></div></div></section></main>
+</div>
+
+<div class="login-screen" id="loginScreen" role="dialog" aria-modal="true" aria-labelledby="login-title" aria-describedby="login-description"><div class="auth-layout"><div class="login-card"><h1 id="login-title">Đăng nhập</h1><p id="login-description">Tiếp tục hành trình học tập của bạn</p><div id="account-profile" class="account-profile" hidden><div id="profile-avatar" class="avatar"></div><strong id="profile-name"></strong><span id="profile-email"></span><small id="profile-expiry"></small></div><p id="login-feedback" class="login-feedback" role="status" hidden></p><button class="btn google" id="google-login-button" onclick="startGoogleLogin()" disabled><svg id="login-provider-icon" aria-hidden="true" viewBox="0 0 48 48" width="21" height="21"><path fill="#4285f4" d="M43.61 24.46c0-1.36-.12-2.66-.35-3.92H24v7.42h11a9.4 9.4 0 0 1-4.08 6.17v5h6.6c3.86-3.56 6.09-8.8 6.09-14.67Z"/><path fill="#34a853" d="M24 44c5.51 0 10.13-1.83 13.51-4.96l-6.6-5c-1.83 1.23-4.17 1.96-6.91 1.96-5.32 0-9.83-3.59-11.44-8.41H5.75v5.14A20.4 20.4 0 0 0 24 44Z"/><path fill="#fbbc05" d="M12.56 27.59A12.3 12.3 0 0 1 11.92 24c0-1.25.22-2.46.64-3.59v-5.14H5.75A20 20 0 0 0 3.6 24c0 3.23.77 6.29 2.15 8.73Z"/><path fill="#ea4335" d="M24 12c3 0 5.68 1.03 7.8 3.05l5.85-5.85A19.6 19.6 0 0 0 24 4 20.4 20.4 0 0 0 5.75 15.27l6.81 5.14C14.17 15.59 18.68 12 24 12Z"/></svg><span id="login-button-label">Đang kiểm tra…</span></button><p class="login-privacy"><svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>Bạn chọn tài khoản trên <strong>trang Google</strong>. PRO QUIZ không nhận mật khẩu Google của bạn.</span></p><button class="btn ghost" id="login-close" onclick="closeLogin()">Tiếp tục với khách</button><button class="account-retry" id="account-retry" onclick="retryAccount()">Kiểm tra lại kết nối</button><p class="small"><span id="oauth-status">Đang kiểm tra cấu hình đăng nhập…</span></p><p class="small muted" id="account-shared-note" hidden>Kho câu hỏi và tiến trình hiện dùng chung trong ứng dụng.</p></div><p class="auth-tagline">Học tập · Luyện tập · Tiến bộ</p></div></div>
+<div class="modal" id="editModal" role="dialog" aria-modal="true" aria-labelledby="bank-edit-title"><div class="dialog bank-edit-dialog"><div class="edit-heading"><div><h2 id="bank-edit-title">Chỉnh sửa câu hỏi</h2><p class="muted small" id="editSubtitle">Cập nhật nội dung và đáp án</p></div><button class="chat-head-btn" onclick="closeEdit()">×</button></div><label class="edit-label">NỘI DUNG CÂU HỎI</label><textarea class="textarea" id="editQuestion" rows="3"></textarea><label class="edit-label">CÁC PHƯƠNG ÁN</label><div id="editOptions"></div><label class="edit-label">ĐÁP ÁN ĐÚNG</label><select class="field" id="editCorrect"><option value="">Chưa chọn đáp án</option><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select><label class="confirm-answer"><input type="checkbox" id="editConfirmed"> Tôi đã kiểm tra và xác nhận đáp án này</label><p class="muted small">Nếu chưa xác nhận, chỉ nội dung và các lựa chọn được lưu ở trạng thái chờ duyệt.</p><div class="dialog-actions"><button class="btn" onclick="closeEdit()">Hủy</button><button class="btn primary" id="bank-edit-save" onclick="saveEdit()">Lưu thay đổi</button></div></div></div>
+<button class="chat-fab" id="study-chat-toggle" aria-controls="study-chat" aria-expanded="false" onclick="toggleStudyChat()" aria-label="Mở Giáo viên AI"><span class="fab-spark">✦</span><span class="fab-label">AI</span><i class="fab-dot"></i></button>
+<section class="floating-chat" id="study-chat" aria-label="Giáo viên AI">
+ <header class="floating-chat-head"><div class="chat-avatar">✦</div><div class="chat-head-copy"><b>Giáo viên AI</b><small><i id="ai-indicator"></i><span id="chat-thinking">Trợ lý học tập của bạn</span></small></div><button class="chat-head-btn" onclick="toggleStudyChat()" aria-label="Thu nhỏ">−</button><button class="chat-head-btn" onclick="toggleStudyChat(false)" aria-label="Đóng">×</button></header>
+ <div class="chat-context" id="chat-context"><span>✧</span> Trợ lý có thể hỗ trợ giải thích kiến thức và câu hỏi</div>
+ <div class="chat-messages floating-messages" role="log" aria-live="polite" id="ai-messages-box"><div class="chat-time">BÂY GIỜ</div><div class="bubble chat-bubble system">Chào bạn! 👋 Mình là Giáo viên AI. Bạn đang vướng câu nào? Cứ nhắn, mình sẽ giải thích từng bước nhé.</div></div>
+ <div class="chat-suggestions"><button onclick="quickChat('Giải thích câu hỏi hiện tại giúp mình')">Giải thích câu này</button><button onclick="quickChat('Vì sao đáp án đúng lại là đáp án đó?')">Vì sao đáp án đúng?</button></div>
+ <div class="floating-chat-compose ai-chat-input-area"><input class="field" id="ai-chat-input-field" placeholder="Nhập tin nhắn..." onkeydown="handleChatFieldKeyPress(event)"><button class="send-chat" id="chat-send" onclick="sendCustomMessageToAI()" aria-label="Gửi tin nhắn">➤</button></div><div class="chat-footnote">PRO QUIZ · AI STUDY COMPANION</div>
+</section>
+
+<dialog class="import-guide" id="import-guide" aria-labelledby="import-guide-title"><header class="import-guide-heading"><div><span class="eyebrow">TỪ TÀI LIỆU ĐẾN BỘ CÂU HỎI</span><h2 id="import-guide-title">Chuẩn hóa tài liệu bằng Gemini</h2></div><form method="dialog"><button class="chat-head-btn" aria-label="Đóng hướng dẫn">×</button></form></header><ol class="import-guide-steps"><li><b>Sao chép câu lệnh bên dưới.</b> Mở Gemini, dán câu lệnh và đính kèm tài liệu gốc.</li><li><b>Tải file Word (.docx) do Gemini tạo.</b> Nếu Gemini không thể xuất file, dùng cuộc trò chuyện có hỗ trợ tạo file hoặc chép kết quả vào Word và lưu .docx.</li><li><b>Đưa file Word lên PRO QUIZ.</b> Web tự tách câu hỏi, lựa chọn và đáp án để bạn xem trước.</li><li><b>Kiểm tra rồi lưu.</b> Nhấn “Lưu vào kho c? nh?n” hoặc “Lưu và bắt đầu làm bài”.</li></ol><div class="import-prompt-heading"><label for="word-preparation-prompt">Câu lệnh dành cho Gemini</label><button class="btn primary" id="copy-word-prompt" onclick="copyWordPrompt()">Sao chép câu lệnh</button></div><textarea id="word-preparation-prompt" readonly rows="13" spellcheck="false"></textarea><p id="prompt-copy-status" class="small muted" role="status" aria-live="polite"></p><div class="import-guide-note">Mỗi câu gồm nội dung, bốn lựa chọn A–D trên bốn dòng riêng và dòng <strong>Đáp án: A/B/C/D</strong>. Nội dung và đáp án do Gemini tạo vẫn cần được bạn kiểm tra trước khi lưu.</div><footer class="import-guide-actions"><a class="btn" href="https://gemini.google.com/app" target="_blank" rel="noopener noreferrer">Mở Gemini ↗</a><button class="btn primary" onclick="choosePreparedWord()">⇧ Tải file Word đã xử lý lên</button><input type="file" id="prepared-word-input" accept=".docx" hidden onchange="uploadPreparedWord(event)"></footer><p class="small muted">Bạn tự sử dụng Gemini trong tab riêng. Thao tác này không gọi API AI của PRO QUIZ.</p></dialog>
+<dialog class="import-guide" id="textbook-guide" aria-labelledby="textbook-guide-title"><header class="import-guide-heading"><div><span class="eyebrow">TỪ GIÁO TRÌNH ĐẾN BỘ CÂU HỎI THEO CHƯƠNG</span><h2 id="textbook-guide-title">Tạo câu hỏi ôn thi từ giáo trình</h2></div><form method="dialog"><button class="chat-head-btn" aria-label="Đóng hướng dẫn giáo trình">×</button></form></header><ol class="import-guide-steps"><li><b>Sao chép prompt giáo trình.</b> Mở Gemini và đính kèm giáo trình gốc; gửi thêm đề cương ôn thi hoặc đề mẫu nếu có.</li><li><b>Gemini lọc trọng tâm từng chương và tạo câu hỏi.</b> Mỗi câu có A–D, một đáp án đúng; kèm giải thích và nguồn trong tin nhắn riêng để đối chiếu.</li><li><b>Tải một file Word cho mỗi chương.</b> Ví dụ: Chuong_01_Ten_chuong.docx. Nếu Gemini không xuất được file, chép nội dung vào Word và lưu .docx.</li><li><b>Tải từng file chương lên PRO QUIZ.</b> Web tự mở bản xem trước; bạn kiểm tra nội dung và đáp án rồi lưu vào kho c? nh?n.</li></ol><div class="import-prompt-heading"><label for="textbook-preparation-prompt">Prompt giáo trình dành cho Gemini</label><button class="btn primary" id="copy-textbook-prompt" onclick="copyTextbookPrompt()">Sao chép prompt giáo trình</button></div><textarea id="textbook-preparation-prompt" readonly rows="13" spellcheck="false"></textarea><p id="textbook-copy-status" class="small muted" role="status" aria-live="polite"></p><div class="import-guide-note">Trọng tâm dựa trên giáo trình, không phải dự đoán chắc chắn đề thi. Mỗi file nhập chỉ chứa câu hỏi A–D và dòng đáp án; giải thích, nguồn và tổng kết để bên ngoài file. Hãy kiểm tra kết quả trước khi lưu.</div><footer class="import-guide-actions"><a class="btn" href="https://gemini.google.com/app" target="_blank" rel="noopener noreferrer">Mở Gemini, gửi giáo trình ↗</a><button class="btn primary" onclick="chooseChapterWord()">⇧ Tải file Word theo chương lên</button><input type="file" id="chapter-word-input" accept=".docx" hidden onchange="uploadChapterWord(event)"></footer><p class="small muted">Giáo trình gốc được gửi tại Gemini trong tab riêng. Luồng này không gọi API AI của PRO QUIZ.</p></dialog>
+<div class="toast" id="app-toast" role="status" aria-live="polite"></div>
+<script src="/reference-app.js" defer></script><script src="/question-bank.js" defer></script><script src="/redesign.js" defer></script><script src="/import-guide.js" defer></script><script src="/textbook-guide.js" defer></script>
+</body></html>

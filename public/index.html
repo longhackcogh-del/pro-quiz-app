@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ thống trắc nghiệm chuyên nghiệp tích hợp Siêu Trợ Lý AI</title>
+    
+    <!-- Tích hợp thư viện giải mã tài liệu trực tiếp trên trình duyệt -->
+expiryDate: "2026-12-31",expiryDate: "2026-12-31",expiryDate: "2026-12-31",
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+    <div class="app-wrapper">
+        <div class="license-infobar" id="ai-status-banner">
+            <div style="width: 100%; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                <span id="backend-storage-status">D? li?u ???c l?u trong SQLite</span>
+                <span id="ai-status-label" style="font-weight: 600;">?ang ki?m tra Gemini AI...</span>
+            </div>
+            <div class="ai-key-config-wrapper">
+                <span style="font-size: 12.5px; font-weight: 600; color: var(--color-primary);">Kh?a AI ???c gi? an to?n t?i backend trong file .env.</span>
+                <button class="btn btn-primary" id="ai-status-check" style="padding: 6px 12px; font-size: 11.5px;">Ki?m tra AI</button>
+                <a href="#" id="ai-config-help" style="color: var(--color-warning); font-size: 12px; text-decoration: none; font-weight: 500;">H??ng d?n c?u h?nh</a>
+            </div>
+        </div>
+
+        <!-- App Branding -->
+        <div class="app-header">
+            <div class="app-title">PRO QUIZ SYSTEM + SIÊU TRỢ LÝ AI</div>
+            <div id="badge-question-count" class="btn" style="pointer-events: none; padding: 4px 10px; font-size:12px;">0 câu hỏi</div>
+        </div>
+
+        <!-- VIEW: MENU CHÍNH -->
+        <div id="v-menu" class="view-content active">
+            <div class="menu-panel">
+                <button class="btn panel-btn" onclick="openView('v-paste')">
+                    <span class="title">1. Nhập thêm câu hỏi mới (Đọc file PDF, Word)</span>
+                    <span class="desc">Tải file PDF, DOCX, TXT hoặc dán khối đề thô. AI sẽ tự động phân tích và giải đề.</span>
+                </button>
+                <button class="btn panel-btn" onclick="startQuizSession()">
+                    <span class="title">2. Làm bài test trắc nghiệm</span>
+                    <span class="desc">Khởi động lượt ôn tập có Giáo viên AI đồng hành giảng bài trực tiếp.</span>
+                </button>
+                <button class="btn panel-btn" onclick="openViewQuestions()">
+                    <span class="title">3. Xem danh sách câu hỏi</span>
+                    <span class="desc">Duyệt, tra cứu thông tin tất cả các câu hỏi hiện có.</span>
+                </button>
+                <button class="btn panel-btn" onclick="openView('v-edit')">
+                    <span class="title">4. Sửa câu hỏi cụ thể</span>
+                    <span class="desc">Nhập số thứ tự câu hỏi và ghi đè nội dung mới.</span>
+                </button>
+                <button class="btn panel-btn" onclick="openView('v-delete')">
+                    <span class="title">5. Xóa câu hỏi</span>
+                    <span class="desc">Gỡ bỏ câu hỏi không cần thiết khỏi kho đề.</span>
+                </button>
+                <button class="btn panel-btn" onclick="exportDataToTxt()">
+                    <span class="title">6. Xuất kho dữ liệu đề</span>
+                    <span class="desc">Xuất file text định dạng gọn để chia sẻ và lưu trữ.</span>
+                </button>
+                <button class="btn panel-btn" onclick="openWrongLogView()">
+                    <span class="title">7. Lịch sử các câu trả lời sai</span>
+                    <span class="desc">Xem báo cáo danh sách câu sai phân bổ theo lượt làm bài.</span>
+                </button>
+                <button class="btn panel-btn" onclick="exportWrongLogToTxt()">
+                    <span class="title">8. Xuất file các câu trả lời sai</span>
+                    <span class="desc">Lưu trữ các câu đã làm lỗi ra định dạng tệp tin.</span>
+                </button>
+                <button class="btn panel-btn btn-danger" style="background-color: rgba(244, 63, 94, 0.1);" onclick="openView('v-reset')">
+                    <span class="title" style="color: var(--color-danger);">9. Reset tiến trình / Reset dữ liệu</span>
+                    <span class="desc">Làm mới tiến trình ôn tập hoặc xóa sạch kho đề.</span>
+                </button>
+                <button class="btn panel-btn" onclick="openView('v-help')">
+                    <span class="title">10. Hướng dẫn sử dụng</span>
+                    <span class="desc">Xem định dạng thủ công chuẩn hoặc hướng dẫn nạp file tự động.</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- VIEW: DÁN QUIZ MỚI (HỖ TRỢ ĐỌC ĐA FILE PDF, WORD, TXT) -->
+        <div id="v-paste" class="view-content">
+            <h3 style="margin-bottom: 4px; color: var(--text-bright);">Tải tài liệu đề thi thô</h3>
+            <p style="font-size: 12.5px; color: #94a3b8; margin-bottom: 14px;">Hệ thống hỗ trợ đọc trực tiếp tệp tin **PDF, Word (.docx), Văn bản (.txt)**. AI sẽ tự động phân tích, giải đáp án đúng và phân tách dữ liệu.</p>
+            
+            <div class="upload-zone-wrapper">
+                <div class="file-upload-card" onclick="document.getElementById('file-selector-input').click()">
+                    <span id="file-upload-status-label">📁 Bấm để tải lên tệp đề thi (PDF, DOCX, TXT)</span>
+                    <input type="file" id="file-selector-input" accept=".txt,.pdf,.docx" style="display:none;" onchange="processLocalFileParsing(event)">
+                </div>
+            </div>
+
+            <textarea id="paste-input" rows="10" placeholder="Hoặc dán khối đề thô tự do tại đây..."></textarea>
+            
+            <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                <button class="btn" onclick="backToMenu()">Hủy bỏ</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-success" id="btn-ai-import" onclick="handleAIQuestionAnalysis()">⚡ Nhờ AI Bóc Tách & Giải Đề</button>
+                    <button class="btn btn-primary" onclick="handleImportQuestionsManual()">Nạp thủ công (Theo form chuẩn)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: BẮT ĐẦU LÀM BÀI TEST -->
+        <div id="v-quiz" class="view-content">
+            <div class="quiz-flex-layout">
+                <!-- Bên trái: Câu hỏi và các lựa chọn -->
+                <div class="quiz-left-panel">
+                    <div class="quiz-status-row">
+                        <span id="quiz-progress-lbl" style="font-weight: 600; color: var(--color-primary);">Câu 0/0</span>
+                        <span id="quiz-score-lbl" style="font-weight: 600; color: var(--color-success);">Điểm số: 0</span>
+                    </div>
+                    <div class="quiz-card">
+                        <div class="quiz-question-text" id="quiz-question-container">Nội dung câu hỏi đang tải...</div>
+                        <div class="options-list" id="quiz-options-container"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; gap: 10px;">
+                        <button class="btn" id="quiz-prev-btn" onclick="handleQuizPrev()">Quay lại câu trước</button>
+                        <button class="btn btn-danger" onclick="abortQuizSession()">Lưu & Thoát</button>
+                    </div>
+                </div>
+
+                <!-- Bên phải: Khung Chat Giáo viên AI đồng hành -->
+                <div class="quiz-right-panel">
+                    <div class="ai-chat-header">
+                        <div class="ai-pulse-indicator" id="ai-indicator"></div>
+                        <span>Giáo viên AI đồng hành</span>
+                    </div>
+                    <div class="ai-chat-messages" id="ai-messages-box">
+                        <div class="chat-bubble system">Hãy chọn đáp án bên trái. Nếu làm sai hoặc cần giải thích chuyên sâu, tôi sẽ hỗ trợ giải thích ngay lập tức!</div>
+                    </div>
+                    <div class="ai-chat-input-area">
+                        <input type="text" id="ai-chat-input-field" placeholder="Nhập câu hỏi tại đây..." onkeypress="handleChatFieldKeyPress(event)">
+                        <button class="btn btn-primary" style="padding: 8px 14px; font-size:13px;" onclick="sendCustomMessageToAI()">Gửi</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: BÁO CÁO KẾT QUẢ TEST -->
+        <div id="v-result" class="view-content" style="text-align: center;">
+            <h2 style="color: var(--color-success); font-size: 26px; margin-bottom: 10px;">Lượt làm bài kết thúc!</h2>
+            <p id="result-score-summary" style="font-size: 18px; margin-bottom: 24px;">Điểm số đạt được: 0/0</p>
+            <div style="display: flex; flex-direction: column; gap: 10px; max-width: 400px; margin: 0 auto;">
+                <button class="btn btn-primary" id="btn-retest-incorrect-only" onclick="retestIncorrectOnly()">Chỉ ôn tập nhanh các câu vừa làm sai</button>
+                <button class="btn" onclick="startQuizSession()">Luyện tập lượt mới</button>
+                <button class="btn" onclick="backToMenu()">Trở lại màn hình chính</button>
+            </div>
+        </div>
+
+        <!-- VIEW: DANH SÁCH TOÀN BỘ CÂU HỎI -->
+        <div id="v-list" class="view-content">
+            <h3 style="margin-bottom: 12px; color: var(--text-bright);">Kho câu hỏi lưu trữ</h3>
+            <div class="data-scroller" id="scroller-questions-list"></div>
+            <button class="btn" onclick="backToMenu()">Trở lại màn hình chính</button>
+        </div>
+
+        <!-- VIEW: SỬA 1 CÂU HỎI -->
+        <div id="v-edit" class="view-content">
+            <h3 style="margin-bottom: 12px; color: var(--text-bright);">Hiệu chỉnh câu hỏi</h3>
+            <label style="font-size:13px; display:block; margin-bottom:6px;">Nhập số thứ tự câu hỏi cần sửa:</label>
+            <input type="text" id="edit-index" placeholder="Ví dụ: 5">
+            <textarea id="edit-content" rows="8" placeholder="Dán nội dung khối đề mới bao gồm câu hỏi, lựa chọn và kết quả đáp án..."></textarea>
+            <div style="display: flex; justify-content: space-between; gap: 10px;">
+                <button class="btn" onclick="backToMenu()">Hủy bỏ</button>
+                <button class="btn btn-primary" onclick="handleEditSave()">Lưu thay đổi</button>
+            </div>
+        </div>
+
+        <!-- VIEW: XÓA CÂU HỎI -->
+        <div id="v-delete" class="view-content">
+            <h3 style="margin-bottom: 12px; color: var(--text-bright);">Xóa câu hỏi khỏi cơ sở dữ liệu</h3>
+            <label style="font-size:13px; display:block; margin-bottom:6px;">Nhập số thứ tự câu hỏi muốn xóa:</label>
+            <input type="text" id="delete-index" placeholder="Ví dụ: 12">
+            <div style="display: flex; justify-content: space-between; gap: 10px;">
+                <button class="btn" onclick="backToMenu()">Bỏ qua</button>
+                <button class="btn btn-danger" onclick="handleDeleteAction()">Thực thi xóa</button>
+            </div>
+        </div>
+
+        <!-- VIEW: DANH SÁCH CÂU SAI THEO LƯỢT -->
+        <div id="v-wrong" class="view-content">
+            <h3 style="margin-bottom: 12px; color: var(--text-bright);">Lịch sử câu sai theo lượt làm bài</h3>
+            <div class="data-scroller" id="scroller-wrong-list"></div>
+            <button class="btn" onclick="backToMenu()">Trở lại màn hình chính</button>
+        </div>
+
+        <!-- VIEW: CẤU HÌNH RESET DỮ LIỆU -->
+        <div id="v-reset" class="view-content">
+            <h3 style="margin-bottom: 16px; color: var(--text-bright);">Xác nhận tùy chọn khôi phục</h3>
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+                <button class="btn" onclick="resetLearningProgress()">1. Chỉ reset tiến trình làm bài (Quên các câu đã trả lời đúng)</button>
+                <button class="btn btn-danger" onclick="hardResetDatabase()">2. XÓA TOÀN BỘ câu hỏi gốc và lịch sử làm bài</button>
+                <button class="btn" onclick="backToMenu()">Hủy thao tác</button>
+            </div>
+        </div>
+
+        <!-- VIEW: HƯỚNG DẪN SỬ DỤNG -->
+        <div id="v-help" class="view-content">
+            <h3 style="margin-bottom: 12px; color: var(--text-bright);">Hướng dẫn chuẩn hóa dữ liệu</h3>
+            <div style="line-height: 1.6; font-size: 14px; color: var(--text-main); margin-bottom: 20px;">
+                <p><strong>Cách 1: Tự động nhờ AI (Khuyên dùng)</strong><br>Bạn chỉ cần tải lên bất kỳ file định dạng nào hoặc dán khối đề thô lộn xộn, hệ thống sẽ tự bóc tách bằng AI và nạp vào máy.</p>
+                <p style="margin-top:10px;"><strong>Cách 2: Định dạng thủ công tự biên soạn</strong></p>
+                <pre style="background: #111827; padding: 12px; border-radius: 6px; border:1px solid var(--border-color); font-size: 13px; margin: 10px 0;">
+Câu 1: Thủ đô nước Việt Nam là gì?
+A. Thành phố Hồ Chí Minh
+B. Đà Nẵng
+C. Hà Nội
+D. Hải Phòng
+Đáp án: C</pre>
+            </div>
+            <button class="btn" onclick="backToMenu()">Quay lại</button>
+        </div>
+    </div>
+    <script src="/app.js" defer></script>
+</body>
+</html>

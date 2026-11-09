@@ -1,0 +1,18 @@
+node_modules/
+.env
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite-*
+data/backups/
+.DS_Store
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+*.exe
+artifacts/
+.next/
+.langgraph_api/
+# Separate third-party PDF application: retain its own repository.
+/ai-pdf-chatbot-langchain/
