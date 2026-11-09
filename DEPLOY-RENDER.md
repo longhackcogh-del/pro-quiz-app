@@ -1,64 +1,63 @@
-﻿# Đưa PRO QUIZ lên Render
+﻿# Triển khai miễn phí: Render + Neon PostgreSQL
 
-## 1. Repository
+## 1. Tạo Neon Free
 
-Tạo repo của bạn và push source của thư mục gốc. `.gitignore` loại trừ bí mật, database, artifacts và ứng dụng PDF có repo riêng. Không upload file `.env`. Nếu khóa từng vào Git, thay khóa và xử lý lịch sử trước khi công khai.
+Tạo project ở Singapore nếu đặt backend tại khu vực này. Trong Connect, sao chép pooled connection string. Lưu trong `.env` trên máy hoặc DATABASE_URL trên hosting; không đưa vào GitHub. Giữ nguyên tham số TLS của Neon.
 
-## 2. Tạo dịch vụ từ Blueprint
+## 2. Kiểm tra local và chuyển dữ liệu cũ
 
-Trong Render: New → Blueprint → kết nối repo → chọn nhánh `main`. Render đọc `render.yaml`.
+Ứng dụng dùng PostgreSQL khi có DATABASE_URL và không có DATABASE_FILE, hoặc khi DATABASE_DRIVER=postgres. Dùng DATABASE_DRIVER=sqlite để quay lại database local. Không trộn hai lựa chọn khi triển khai Render.
 
-Blueprint khai báo Web Service gói `starter` và disk 1 GB. Đây là cấu hình **có phí**: xem số tiền trên màn hình Render trước khi tạo. Free Web Service không hỗ trợ persistent disk và không giữ được SQLite ổn định qua restart/deploy.
+Nếu có dữ liệu SQLite cần chuyển, dừng server local trước, rồi chạy:
+
+```sh
+node scripts/migrate-sqlite-to-postgres.js
+```
+
+Script đọc `./data/pro-quiz.sqlite`, tạo bản sao trong `data/backups/`, kiểm tra Neon rỗng và chuyển trong một transaction. Nếu Neon đã có bất kỳ dữ liệu ứng dụng nào, script từ chối ghi đè. Giữ nguyên Google ID và ID bản ghi để liên kết bài làm/câu sai/chat không bị mất. Không tự đồng bộ dữ liệu hai chiều sau migration.
+
+Sau đó chạy `npm start` để dùng Neon. Khi đổi database cần đăng nhập Google lại. Nếu dùng server khác, đổi SQLITE_MIGRATION_SOURCE cho đúng file nguồn. Không ghi đè hoặc xóa source để thử lại migration.
+
+## 3. Tạo Render Free từ Blueprint
+
+[Mở Blueprint](https://render.com/deploy?repo=https://github.com/longhackcogh-del/pro-quiz-app).
+
+`render.yaml` khai báo **plan: free**, không có persistent disk. Kiểm tra màn hình xác nhận vẫn là Free; không nâng cấp sang dịch vụ trả phí.
 
 - Build: `npm ci --omit=dev`
 - Start: `npm start`
-- Node: 24.15.0
-- Disk: `/var/data`
-- Database: `/var/data/pro-quiz.sqlite`
+- Node.js: 24
+- DATABASE_DRIVER: postgres
+- DATABASE_URL: chuỗi Neon (secret)
 - Health check: `/healthz`
-- Auto deploy: `checksPass`
-- Không đặt PORT=3000 thủ công; ứng dụng dùng PORT do hosting cung cấp.
+- QUIZ_TEACHER_ENABLED: false
+- Auto deploy: checksPass
+- Không đặt DATABASE_FILE trên Render. Không cần PORT thủ công.
 
-## 3. Google OAuth
+Điền GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET và GOOGLE_REDIRECT_URI vào biến riêng trên Render. Khi có URL dịch vụ thật, sửa callback thành `https://TEN-DICH-VU.onrender.com/auth/google/callback` và đăng ký chính xác trong Google Cloud. `TEN-DICH-VU` là ví dụ, phải thay bằng hostname thật. Kiểm tra Audience/test users nếu OAuth còn Testing.
 
-Điền GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET vào biến môi trường riêng của Render. Với URL thật của dịch vụ, đặt GOOGLE_REDIRECT_URI là:
+CHATBOT_URL để trống khi chưa có ứng dụng PDF HTTPS riêng. Không trỏ localhost trên production. Gemini API key không bắt buộc khi chỉ dùng các chức năng không gọi AI.
 
-```text
-https://TEN-DICH-VU.onrender.com/auth/google/callback
-```
+## 4. Kiểm tra online
 
-Đăng ký chính xác URI này trong Google Cloud. `TEN-DICH-VU` chỉ là ví dụ, không chép nguyên. Kiểm tra Audience/test users nếu OAuth còn Testing. Nếu chưa biết URL khi tạo Blueprint, dùng hostname dự kiến rồi sửa theo URL thực tế trước khi thử đăng nhập.
+- `/healthz` trả 200, status ok.
+- Đăng nhập Google thật, logout và đăng nhập lại.
+- Hai tài khoản có dữ liệu riêng.
+- Nhập đề, xác nhận đáp án, tạo/chuyển bộ, làm bài, ôn câu sai.
+- Dữ liệu vẫn còn sau restart/deploy. Thử một bản ghi nhận diện được rồi xóa bằng giao diện sau khi kiểm tra.
+- Kiểm tra mobile và trạng thái chatbot khóa.
 
-QUIZ_TEACHER_ENABLED giữ `false`. Không cần Gemini API key để dùng các chức năng không gọi AI. CHATBOT_URL để trống khi chưa deploy ứng dụng PDF riêng, tránh trỏ tới localhost của khách.
+## 5. Cập nhật và giới hạn nền tảng
 
-## 4. Dữ liệu và bản sao lưu
+Sửa local → `npm test` → commit → push nhánh main. GitHub Actions kiểm tra cả SQLite và PostgreSQL 17. Render triển khai sau khi checks pass; nếu không có checks thì Render có thể deploy mà không chờ test, nên giữ workflow CI bật.
 
-Deploy mới tạo database rỗng. Dữ liệu máy cá nhân không tự đi theo code lên GitHub.
+Render Free ngủ sau 15 phút không có traffic; lượt truy cập đầu có thể chậm. Phiên đăng nhập lưu RAM nên restart/ngủ có thể yêu cầu đăng nhập lại; bài làm nằm trong Neon. Neon Free cũng có quota tài nguyên và có thể scale to zero. Các quota này do nhà cung cấp áp dụng, chưa phải giới hạn gói người dùng trong PRO QUIZ.
 
-Nếu cần chuyển kho cũ: sao lưu bằng SQLite backup/VACUUM INTO, chuyển qua kênh riêng tới disk khi app được dừng an toàn; không chép đè database đang dùng. Giữ nguyên bản gốc. Đặt LEGACY_OWNER_EMAIL trên hosting nếu database có dữ liệu chung chưa gắn tài khoản; chỉ email Google đã xác thực khớp cấu hình được nhận một lần.
+Không có cam kết uptime hoặc chịu tải lớn. Sao lưu PostgreSQL định kỳ ra nơi riêng và thử khôi phục. Rollback code không tự rollback dữ liệu/schema. Database SQLite cũ vẫn giữ nguyên nhưng sẽ không nhận các thay đổi phát sinh ở Neon.
 
-Thiết lập sao lưu định kỳ ngoài máy chủ và thử khôi phục trước khi nhận dữ liệu quan trọng. Bản sao migration trong cùng disk không thay thế backup ngoài máy chủ.
+## Tài liệu
 
-## 5. Xác nhận bản online
-
-- Mở `/healthz`: trả 200 và `status: ok`.
-- Thử Google OAuth thật và đăng xuất.
-- Dùng hai tài khoản kiểm tra dữ liệu tách biệt.
-- Nhập tài liệu, xác nhận đáp án, tạo bộ, chuyển câu, luyện tập và ôn câu sai.
-- Tạo một câu thử, restart/deploy rồi đăng nhập lại: câu phải còn.
-- Kiểm tra trên điện thoại và xác nhận AI vẫn khóa.
-
-Chưa đạt các bước này thì chưa gọi là đã kiểm thử production.
-
-## 6. Cập nhật
-
-Sửa local → `npm test` → commit → push nhánh `main`. GitHub Actions chạy kiểm thử; Render triển khai sau khi checks pass. Nếu không có CI checks, Render có thể triển khai mà không chờ test, nên giữ workflow CI bật. Branch thực tế trên Render phải trùng nhánh bạn push.
-
-Persistent disk khiến deploy có khoảng gián đoạn. Phiên đang lưu RAM nên người dùng cần đăng nhập lại khi restart. Rollback code không tự rollback schema/dữ liệu; luôn sao lưu trước migration có thay đổi dữ liệu.
-
-## Tài liệu chính thức
-
-- https://render.com/docs/blueprint-spec
-- https://render.com/docs/disks
-- https://render.com/docs/deploys
 - https://render.com/docs/free
+- https://render.com/docs/blueprint-spec
+- https://neon.com/pricing
+- https://neon.com/docs/get-started/connect-neon

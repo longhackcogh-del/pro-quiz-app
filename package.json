@@ -3,17 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "description": "Personal quiz platform with Google OAuth, private question sets and document imports",
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "main": "server/app.js",
   "scripts": {
     "start": "node server/app.js",
     "dev": "node --watch server/app.js",
-    "test": "node --test tests/import-flow.test.js tests/import-browser.test.js tests/google-auth.test.js tests/gemini-flow.test.js tests/wrong-review.test.js tests/account-isolation.test.js"
+    "test": "node --test tests/import-flow.test.js tests/import-browser.test.js tests/google-auth.test.js tests/gemini-flow.test.js tests/wrong-review.test.js tests/account-isolation.test.js tests/postgres-flow.test.js"
   },
   "dependencies": {
     "express": "^5.1.0",
     "mammoth": "^1.12.3",
     "multer": "^2.4.0",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.23.1"
   }
 }

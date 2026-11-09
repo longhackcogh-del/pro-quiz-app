@@ -1,24 +1,22 @@
-# Paid service and persistent disk. Review charges in Render before creating.
+# Free web service. PostgreSQL must be hosted separately (for example Neon Free).
 services:
   - type: web
     name: pro-quiz-app
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeployTrigger: checksPass
-    disk:
-      name: pro-quiz-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "24.15.0"
       - key: NODE_ENV
         value: production
-      - key: DATABASE_FILE
-        value: /var/data/pro-quiz.sqlite
+      - key: DATABASE_DRIVER
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
       - key: QUIZ_TEACHER_ENABLED
         value: "false"
       - key: GOOGLE_CLIENT_ID

@@ -18,8 +18,8 @@ const port = Number(process.env.PORT) || 3000;
 const publicDirectory = path.join(__dirname, '..', 'public');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-app.get('/healthz', (_req,res) => {
-  try { db.prepare('SELECT 1').get(); res.json({status:'ok'}); }
+app.get('/healthz', async (_req,res) => {
+  try { (await db.prepare('SELECT 1').get()); res.json({status:'ok'}); }
   catch { res.status(503).json({status:'unavailable'}); }
 });
 app.use(express.json({ limit: '200kb' }));
@@ -113,28 +113,29 @@ function mapQuestion(row, options = []) {
   };
 }
 
-function getQuestion(id) {
-  const row = db.prepare('SELECT * FROM questions WHERE id = ? AND owner_id = ?').get(Number(id), ownerId());
+async function getQuestion(id) {
+  if (!Number.isSafeInteger(Number(id)) || Number(id) < 1) return null;
+  const row = (await db.prepare('SELECT * FROM questions WHERE id = ? AND owner_id = ?').get(Number(id), ownerId()));
   if (!row) return null;
-  const options = db.prepare('SELECT option_index, text FROM options WHERE question_id = ? ORDER BY option_index').all(row.id).map((option) => option.text);
+  const options = (await db.prepare('SELECT option_index, text FROM options WHERE question_id = ? ORDER BY option_index').all(row.id)).map((option) => option.text);
   return mapQuestion(row, options);
 }
 
-function getStats() {
-  const row = db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN answer_status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed, SUM(CASE WHEN answer_status != 'confirmed' THEN 1 ELSE 0 END) AS unconfirmed FROM questions WHERE owner_id = ?`).get(ownerId());
-  const wrongCount = new Set(getWrongAnswers().map(question => question.id)).size;
-  const active = db.prepare("SELECT id FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC LIMIT 1").get(ownerId());
+async function getStats() {
+  const row = (await db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN answer_status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed, SUM(CASE WHEN answer_status != 'confirmed' THEN 1 ELSE 0 END) AS unconfirmed FROM questions WHERE owner_id = ?`).get(ownerId()));
+  const wrongCount = new Set((await getWrongAnswers()).map(question => question.id)).size;
+  const active = (await db.prepare("SELECT id FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC LIMIT 1").get(ownerId()));
   return { total: Number(row.total || 0), confirmed: Number(row.confirmed || 0), unconfirmed: Number(row.unconfirmed || 0), wrong: wrongCount, activeAttemptId: active?.id || null };
 }
 
-function getWrongAnswers() {
-  const rows = db.prepare(`SELECT wrong_answers.question_id, wrong_answers.selected_index, wrong_answers.attempt_id, wrong_answers.created_at FROM wrong_answers JOIN attempts ON attempts.id = wrong_answers.attempt_id WHERE attempts.status = 'completed' AND attempts.owner_id = ? ORDER BY wrong_answers.id DESC`).all(ownerId());
-  const entries = rows.map(row => ({ ...getQuestion(row.question_id), selectedIndex: row.selected_index, attemptId: row.attempt_id, wrongAt: row.created_at, attemptStatus: 'completed' }));
-  const active = db.prepare("SELECT id, question_order, answers, updated_at FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC, id DESC").all(ownerId());
+async function getWrongAnswers() {
+  const rows = (await db.prepare(`SELECT wrong_answers.question_id, wrong_answers.selected_index, wrong_answers.attempt_id, wrong_answers.created_at FROM wrong_answers JOIN attempts ON attempts.id = wrong_answers.attempt_id WHERE attempts.status = 'completed' AND attempts.owner_id = ? ORDER BY wrong_answers.id DESC`).all(ownerId()));
+  const entries = (await Promise.all(rows.map(async row => ({ ...(await getQuestion(row.question_id)), selectedIndex: row.selected_index, attemptId: row.attempt_id, wrongAt: row.created_at, attemptStatus: 'completed' }))));
+  const active = (await db.prepare("SELECT id, question_order, answers, updated_at FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC, id DESC").all(ownerId()));
   for (const attempt of active) {
     const answers = json(attempt.answers, {});
     for (const id of json(attempt.question_order, [])) {
-      const question = getQuestion(id);
+      const question = (await getQuestion(id));
       const selectedIndex = answers[id];
       if (question?.answerStatus === 'confirmed' && validAnswer(question.answerIndex) && validAnswer(selectedIndex) && selectedIndex !== question.answerIndex) {
         entries.push({ ...question, selectedIndex, attemptId: attempt.id, wrongAt: attempt.updated_at, attemptStatus: 'in_progress' });
@@ -153,39 +154,40 @@ function shuffle(items) {
   return result;
 }
 
-function getAttempt(id, includeAnswer = false) {
-  const attempt = db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(id), ownerId());
+async function getAttempt(id, includeAnswer = false) {
+  if (!Number.isSafeInteger(Number(id)) || Number(id) < 1) return null;
+  const attempt = (await db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(id), ownerId()));
   if (!attempt) return null;
   const questionOrder = json(attempt.question_order, []);
   const optionOrders = json(attempt.option_orders, {});
   const answers = json(attempt.answers, {});
-  const questions = questionOrder.map((questionId) => {
-    const question = getQuestion(questionId);
+  const questions = (await Promise.all(questionOrder.map(async (questionId) => {
+    const question = (await getQuestion(questionId));
     if (!question) return null;
     const order = optionOrders[questionId] || [0, 1, 2, 3];
     return { id: question.id, prompt: question.prompt, options: order.map((optionIndex) => ({ index: optionIndex, text: question.options[optionIndex] })), selectedIndex: answers[questionId] ?? null, answerStatus: question.answerStatus, ...(includeAnswer && { answerIndex: question.answerIndex }) };
-  }).filter(Boolean);
+  }))).filter(Boolean);
   return { id: attempt.id, status: attempt.status, currentIndex: attempt.current_index, score: attempt.score, total: questions.length, questions, updatedAt: attempt.updated_at };
 }
 
-app.get('/api/stats', (_req, res) => res.json(getStats()));
-app.get('/api/dashboard', (_req, res) => {
-  const completed = db.prepare("SELECT question_order, score FROM attempts WHERE status = 'completed' AND owner_id = ?").all(ownerId());
+app.get('/api/stats', async (_req, res) => res.json((await getStats())));
+app.get('/api/dashboard', async (_req, res) => {
+  const completed = (await db.prepare("SELECT question_order, score FROM attempts WHERE status = 'completed' AND owner_id = ?").all(ownerId()));
   const total = completed.reduce((sum, attempt) => sum + json(attempt.question_order, []).length, 0);
   const correct = completed.reduce((sum, attempt) => sum + attempt.score, 0);
-  const recent = db.prepare('SELECT id, status, question_order, answers, score, updated_at FROM attempts WHERE owner_id = ? ORDER BY updated_at DESC, id DESC LIMIT 3').all(ownerId()).map(attempt => {
+  const recent = (await db.prepare('SELECT id, status, question_order, answers, score, updated_at FROM attempts WHERE owner_id = ? ORDER BY updated_at DESC, id DESC LIMIT 3').all(ownerId())).map(attempt => {
     const ids = json(attempt.question_order, []);
     const answers = json(attempt.answers, {});
     return { id: attempt.id, status: attempt.status, total: ids.length, answered: ids.filter(id => answers[id] !== undefined && answers[id] !== null).length, score: attempt.score, updatedAt: attempt.updated_at };
   });
-  res.json({ ...getStats(), completedAttempts: completed.length, accuracy: total ? Math.round(correct * 100 / total) : null, recent });
+  res.json({ ...(await getStats()), completedAttempts: completed.length, accuracy: total ? Math.round(correct * 100 / total) : null, recent });
 });
 app.get('/api/ai/status', (_req, res) => {
   const config = aiConfig();
   res.json({ configured: Boolean(config), teacherEnabled: process.env.QUIZ_TEACHER_ENABLED === 'true', provider: config?.provider || 'AI', model: config?.model || null, connectionVerified: Boolean(config && lastAIConnectionAt), lastSuccessfulRequestAt: config ? lastAIConnectionAt : null });
 });
 
-app.post('/api/imports/preview', (req, res) => {
+app.post('/api/imports/preview', async (req, res) => {
   const parsed = parseQuizText(req.body.text);
   parsed.questions = parsed.questions.map((question) => ({ ...question, id: randomUUID() }));
   res.json({ ...parsed, aiAvailable: Boolean(aiConfig()), aiMessage: aiConfig() ? null : 'Chưa kết nối AI. Câu có đáp án nguồn vẫn được nhận diện chính xác.' });
@@ -231,7 +233,7 @@ app.post('/api/imports/ai-preview', async (req, res) => {
   }
 });
 
-app.post('/api/questions/import', (req, res) => {
+app.post('/api/questions/import', async (req, res) => {
   const parsed = Array.isArray(req.body.questions)
     ? { questions: req.body.questions, invalid: [], totalBlocks: req.body.questions.length }
     : parseQuizText(req.body.text);
@@ -257,98 +259,98 @@ app.post('/api/questions/import', (req, res) => {
     validated.push({ prompt, options, answerIndex, answerStatus, answerSource, sourceText, suggestionIndex, suggestionReason });
   }
   if (!validated.length) return res.status(400).json({ error: 'Không có câu hợp lệ để lưu.' });
-  db.exec('BEGIN');
-  try {
+  await db.transaction(async () => {
     for (const question of validated) {
-      const result = insertQuestion.run(question.prompt, question.sourceText, question.answerIndex, question.answerStatus, question.answerSource, question.suggestionIndex, question.suggestionReason, ownerId());
-      question.options.forEach((text, optionIndex) => insertOption.run(result.lastInsertRowid, optionIndex, text));
-      imported.push(getQuestion(result.lastInsertRowid));
+      const result = (await insertQuestion.run(question.prompt, question.sourceText, question.answerIndex, question.answerStatus, question.answerSource, question.suggestionIndex, question.suggestionReason, ownerId()));
+      (await Promise.all(question.options.map(async (text, optionIndex) => (await insertOption.run(result.lastInsertRowid, optionIndex, text)))));
+      imported.push((await getQuestion(result.lastInsertRowid)));
     }
-    db.exec('COMMIT');
-  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  });
   res.status(201).json({ ...parsed, imported });
 });
 
 app.use('/api/question-sets', require('./question-sets'));
 
-app.get('/api/questions', (_req, res) => {
-  const rows = db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId());
-  res.json(rows.map((row) => getQuestion(row.id)));
+app.get('/api/questions', async (_req, res) => {
+  const rows = (await db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId()));
+  res.json((await Promise.all(rows.map(async (row) => (await getQuestion(row.id))))));
 });
 
-app.get('/api/questions/:id', (req, res, next) => {
+app.get('/api/questions/:id', async (req, res, next) => {
   if (req.params.id === 'export') return next();
-  const question = getQuestion(req.params.id);
+  const question = (await getQuestion(req.params.id));
   if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
   res.json(question);
 });
 
-app.patch('/api/questions/:id', (req, res) => {
-  const question = getQuestion(req.params.id);
+app.patch('/api/questions/:id', async (req, res) => {
+  const question = (await getQuestion(req.params.id));
   if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
   const answerIndex = req.body.answerIndex;
   const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : question.prompt;
   const options = Array.isArray(req.body.options) ? req.body.options.map((option) => String(option || '').trim()) : question.options;
   if (!validAnswer(answerIndex)) return res.status(400).json({ error: 'Đáp án phải là A, B, C hoặc D.' });
   if (!prompt || options.length !== 4 || options.some((option) => !option)) return res.status(400).json({ error: 'Câu hỏi cần nội dung và đủ bốn lựa chọn.' });
+  await db.transaction(async () => {
   const updateQuestion = db.prepare("UPDATE questions SET prompt = ?, answer_index = ?, answer_status = 'confirmed', answer_source = 'user', updated_at = CURRENT_TIMESTAMP WHERE id = ?");
-  updateQuestion.run(prompt, answerIndex, question.id);
-  db.prepare('DELETE FROM options WHERE question_id = ?').run(question.id);
+  (await updateQuestion.run(prompt, answerIndex, question.id));
+  (await db.prepare('DELETE FROM options WHERE question_id = ?').run(question.id));
   const insertOption = db.prepare('INSERT INTO options (question_id, option_index, text) VALUES (?, ?, ?)');
-  options.forEach((text, optionIndex) => insertOption.run(question.id, optionIndex, text));
-  res.json(getQuestion(question.id));
+  (await Promise.all(options.map(async (text, optionIndex) => (await insertOption.run(question.id, optionIndex, text)))));
+  });
+  res.json((await getQuestion(question.id)));
 });
 
-app.patch('/api/questions/:id/content', (req, res) => {
-  const question = getQuestion(req.params.id);
+app.patch('/api/questions/:id/content', async (req, res) => {
+  const question = (await getQuestion(req.params.id));
   if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
   const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : '';
   const options = Array.isArray(req.body.options) ? req.body.options.map((option) => String(option || '').trim()) : [];
   if (!prompt || options.length !== 4 || options.some((option) => !option)) return res.status(400).json({ error: 'Câu hỏi cần nội dung và đủ bốn lựa chọn.' });
-  db.prepare("UPDATE questions SET prompt = ?, answer_index = NULL, answer_status = 'unconfirmed', answer_source = 'not_provided', ai_suggestion_index = NULL, ai_suggestion_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(prompt, question.id);
-  db.prepare('DELETE FROM options WHERE question_id = ?').run(question.id);
+  await db.transaction(async () => {
+  (await db.prepare("UPDATE questions SET prompt = ?, answer_index = NULL, answer_status = 'unconfirmed', answer_source = 'not_provided', ai_suggestion_index = NULL, ai_suggestion_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(prompt, question.id));
+  (await db.prepare('DELETE FROM options WHERE question_id = ?').run(question.id));
   const insertOption = db.prepare('INSERT INTO options (question_id, option_index, text) VALUES (?, ?, ?)');
-  options.forEach((text, optionIndex) => insertOption.run(question.id, optionIndex, text));
-  res.json(getQuestion(question.id));
+  (await Promise.all(options.map(async (text, optionIndex) => (await insertOption.run(question.id, optionIndex, text)))));
+  });
+  res.json((await getQuestion(question.id)));
 });
 
 app.post('/api/questions/:id/ai-suggest', async (req, res) => {
-  const question = getQuestion(req.params.id);
+  const question = (await getQuestion(req.params.id));
   if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
   if (!aiConfig()) return res.status(503).json({ error: 'Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.' });
 
   try {
     const [suggestion] = await suggestAnswers([{ ...question, id: String(question.id) }], generateAI);
-    const current = getQuestion(question.id);
+    const current = (await getQuestion(question.id));
     if (!current || current.prompt !== question.prompt || JSON.stringify(current.options) !== JSON.stringify(question.options)) return res.status(409).json({ error: 'Câu hỏi đã thay đổi trong khi AI phân tích. Hãy thử lại.' });
-    db.prepare("UPDATE questions SET ai_suggestion_index = ?, ai_suggestion_reason = ?, answer_source = CASE WHEN answer_status = 'confirmed' THEN answer_source ELSE 'ai_suggestion' END, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(suggestion.aiSuggestionIndex, suggestion.aiSuggestionReason, question.id);
-    res.json({ ...getQuestion(question.id), needsReview: suggestion.needsReview });
+    (await db.prepare("UPDATE questions SET ai_suggestion_index = ?, ai_suggestion_reason = ?, answer_source = CASE WHEN answer_status = 'confirmed' THEN answer_source ELSE 'ai_suggestion' END, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(suggestion.aiSuggestionIndex, suggestion.aiSuggestionReason, question.id));
+    res.json({ ...(await getQuestion(question.id)), needsReview: suggestion.needsReview });
   } catch (error) { res.status(502).json({ error: error.message }); }
 });
 
-app.delete('/api/questions/all', (_req, res) => {
-  db.exec('BEGIN');
-  try {
-    db.prepare('DELETE FROM attempts WHERE owner_id = ?').run(ownerId());
-    db.prepare('DELETE FROM questions WHERE owner_id = ?').run(ownerId());
-    db.exec('COMMIT');
-  } catch (error) { db.exec('ROLLBACK'); throw error; }
+app.delete('/api/questions/all', async (_req, res) => {
+  await db.transaction(async () => {
+    (await db.prepare('DELETE FROM attempts WHERE owner_id = ?').run(ownerId()));
+    (await db.prepare('DELETE FROM questions WHERE owner_id = ?').run(ownerId()));
+  });
   res.status(204).end();
 });
 
-app.delete('/api/progress', (_req, res) => {
-  db.prepare("DELETE FROM attempts WHERE status = 'in_progress' AND owner_id = ?").run(ownerId());
+app.delete('/api/progress', async (_req, res) => {
+  (await db.prepare("DELETE FROM attempts WHERE status = 'in_progress' AND owner_id = ?").run(ownerId()));
   res.status(204).end();
 });
 
-app.delete('/api/questions/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM questions WHERE id = ? AND owner_id = ?').run(Number(req.params.id), ownerId());
+app.delete('/api/questions/:id', async (req, res) => {
+  const result = (await db.prepare('DELETE FROM questions WHERE id = ? AND owner_id = ?').run(Number(req.params.id), ownerId()));
   if (result.changes === 0) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
   res.status(204).end();
 });
 
-app.get('/api/questions/export', (_req, res) => {
-  const questions = db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId()).map((row) => getQuestion(row.id));
+app.get('/api/questions/export', async (_req, res) => {
+  const questions = (await Promise.all((await db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId())).map(async (row) => (await getQuestion(row.id)))));
   const text = questions.map((question, index) => {
     const options = question.options.map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`).join('\n');
     const answer = question.answerIndex === null ? 'CHƯA XÁC NHẬN' : String.fromCharCode(65 + question.answerIndex);
@@ -359,8 +361,8 @@ app.get('/api/questions/export', (_req, res) => {
   res.send(text);
 });
 
-app.get('/api/wrong-answers/export', (_req, res) => {
-  const rows = getWrongAnswers();
+app.get('/api/wrong-answers/export', async (_req, res) => {
+  const rows = (await getWrongAnswers());
   const text = rows.map((question, index) => {
     const options = question.options.map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`).join('\n');
     return `Lượt ${question.attemptId} · Câu ${index + 1}: ${question.prompt}\n${options}\nBạn chọn: ${answerLabel(question.selectedIndex)} · Đáp án đúng: ${answerLabel(question.answerIndex)}`;
@@ -370,35 +372,36 @@ app.get('/api/wrong-answers/export', (_req, res) => {
   res.send(text);
 });
 
-app.get('/api/wrong-answers', (_req, res) => {
-  res.json(getWrongAnswers());
+app.get('/api/wrong-answers', async (_req, res) => {
+  res.json((await getWrongAnswers()));
 });
 
-app.post('/api/attempts', (req, res) => {
+app.post('/api/attempts', async (req, res) => {
   const requestedIds = Array.isArray(req.body.questionIds) ? req.body.questionIds.map(Number).filter(Number.isInteger) : null;
-  const rows = requestedIds ? db.prepare(`SELECT id FROM questions WHERE owner_id = ? AND answer_status = 'confirmed' AND id IN (${requestedIds.map(() => '?').join(',')}) ORDER BY id`).all(ownerId(), ...requestedIds) : db.prepare("SELECT id FROM questions WHERE answer_status = 'confirmed' AND owner_id = ? ORDER BY id").all(ownerId());
+  if (requestedIds && !requestedIds.length) return res.status(400).json({error:'Chưa chọn câu hỏi để luyện tập.'});
+  const rows = requestedIds ? (await db.prepare(`SELECT id FROM questions WHERE owner_id = ? AND answer_status = 'confirmed' AND id IN (${requestedIds.map(() => '?').join(',')}) ORDER BY id`).all(ownerId(), ...requestedIds)) : (await db.prepare("SELECT id FROM questions WHERE answer_status = 'confirmed' AND owner_id = ? ORDER BY id").all(ownerId()));
   if (requestedIds && rows.length !== new Set(requestedIds).size) return res.status(400).json({ error: 'Danh sách câu hỏi không hợp lệ hoặc không thuộc tài khoản của bạn.' });
   if (rows.length === 0) return res.status(400).json({ error: 'Cần ít nhất một câu đã xác nhận đáp án để bắt đầu test.' });
   const questionOrder = shuffle(rows.map((row) => row.id));
   const optionOrders = {};
   questionOrder.forEach((questionId) => { optionOrders[questionId] = shuffle([0, 1, 2, 3]); });
-  const result = db.prepare('INSERT INTO attempts (question_order, option_orders, owner_id) VALUES (?, ?, ?)').run(JSON.stringify(questionOrder), JSON.stringify(optionOrders), ownerId());
-  res.status(201).json(getAttempt(result.lastInsertRowid, true));
+  const result = (await db.prepare('INSERT INTO attempts (question_order, option_orders, owner_id) VALUES (?, ?, ?)').run(JSON.stringify(questionOrder), JSON.stringify(optionOrders), ownerId()));
+  res.status(201).json((await getAttempt(result.lastInsertRowid, true)));
 });
 
-app.get('/api/attempts/active', (_req, res) => {
-  const row = db.prepare("SELECT id FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC LIMIT 1").get(ownerId());
-  res.json(row ? getAttempt(row.id, true) : null);
+app.get('/api/attempts/active', async (_req, res) => {
+  const row = (await db.prepare("SELECT id FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC LIMIT 1").get(ownerId()));
+  res.json(row ? (await getAttempt(row.id, true)) : null);
 });
 
-app.get('/api/attempts/:id', (req, res) => {
-  const attempt = getAttempt(req.params.id, true);
+app.get('/api/attempts/:id', async (req, res) => {
+  const attempt = (await getAttempt(req.params.id, true));
   if (!attempt) return res.status(404).json({ error: 'Không tìm thấy lượt làm bài.' });
   res.json(attempt);
 });
 
-app.patch('/api/attempts/:id/answer', (req, res) => {
-  const attempt = db.prepare("SELECT * FROM attempts WHERE id = ? AND status = 'in_progress' AND owner_id = ?").get(Number(req.params.id), ownerId());
+app.patch('/api/attempts/:id/answer', async (req, res) => {
+  const attempt = (await db.prepare("SELECT * FROM attempts WHERE id = ? AND status = 'in_progress' AND owner_id = ?").get(Number(req.params.id), ownerId()));
   if (!attempt) return res.status(404).json({ error: 'Lượt làm bài không tồn tại hoặc đã kết thúc.' });
   const questionId = Number(req.body.questionId);
   const selectedIndex = req.body.selectedIndex === null ? null : Number(req.body.selectedIndex);
@@ -407,58 +410,60 @@ app.patch('/api/attempts/:id/answer', (req, res) => {
   const answers = json(attempt.answers, {});
   answers[questionId] = selectedIndex;
   const currentIndex = Math.max(0, Math.min(questionOrder.length - 1, Number(req.body.currentIndex) || 0));
-  db.prepare('UPDATE attempts SET answers = ?, current_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(JSON.stringify(answers), currentIndex, attempt.id);
-  res.json(getAttempt(attempt.id, true));
+  (await db.prepare('UPDATE attempts SET answers = ?, current_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(JSON.stringify(answers), currentIndex, attempt.id));
+  res.json((await getAttempt(attempt.id, true)));
 });
 
-app.post('/api/attempts/:id/submit', (req, res) => {
-  const attempt = db.prepare("SELECT * FROM attempts WHERE id = ? AND status = 'in_progress' AND owner_id = ?").get(Number(req.params.id), ownerId());
+app.post('/api/attempts/:id/submit', async (req, res) => {
+  const attempt = (await db.prepare("SELECT * FROM attempts WHERE id = ? AND status = 'in_progress' AND owner_id = ?").get(Number(req.params.id), ownerId()));
   if (!attempt) return res.status(404).json({ error: 'Lượt làm bài không tồn tại hoặc đã kết thúc.' });
   const answers = json(attempt.answers, {});
   const questionOrder = json(attempt.question_order, []);
   let score = 0;
   const wrong = [];
-  questionOrder.forEach((questionId) => {
-    const question = getQuestion(questionId);
+  (await Promise.all(questionOrder.map(async (questionId) => {
+    const question = (await getQuestion(questionId));
     if (!question || question.answerStatus !== 'confirmed' || !validAnswer(question.answerIndex)) return;
     if (answers[questionId] !== undefined && answers[questionId] === question.answerIndex) score += 1;
     else wrong.push({ questionId, selectedIndex: answers[questionId] ?? null });
-  });
-  db.prepare("UPDATE attempts SET status = 'completed', score = ?, updated_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(score, attempt.id);
+  })));
+  await db.transaction(async () => {
+  (await db.prepare("UPDATE attempts SET status = 'completed', score = ?, updated_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(score, attempt.id));
   const addWrong = db.prepare('INSERT OR REPLACE INTO wrong_answers (attempt_id, question_id, selected_index) VALUES (?, ?, ?)');
-  wrong.forEach((item) => addWrong.run(attempt.id, item.questionId, item.selectedIndex));
-  res.json({ ...getAttempt(attempt.id, true), score, wrongCount: wrong.length });
+  (await Promise.all(wrong.map(async (item) => (await addWrong.run(attempt.id, item.questionId, item.selectedIndex)))));
+  });
+  res.json({ ...(await getAttempt(attempt.id, true)), score, wrongCount: wrong.length });
 });
 
-app.post('/api/attempts/:id/retry-wrong', (req, res) => {
+app.post('/api/attempts/:id/retry-wrong', async (req, res) => {
   const attemptId = Number(req.params.id);
-  if (!db.prepare('SELECT id FROM attempts WHERE id = ? AND owner_id = ?').get(attemptId, ownerId())) return res.status(404).json({ error: 'Không tìm thấy lượt làm bài.' });
-  const ids = [...new Set(getWrongAnswers().filter(question => question.attemptId === attemptId && question.answerStatus === 'confirmed' && validAnswer(question.answerIndex)).map(question => question.id))];
+  if (!(await db.prepare('SELECT id FROM attempts WHERE id = ? AND owner_id = ?').get(attemptId, ownerId()))) return res.status(404).json({ error: 'Không tìm thấy lượt làm bài.' });
+  const ids = [...new Set((await getWrongAnswers()).filter(question => question.attemptId === attemptId && question.answerStatus === 'confirmed' && validAnswer(question.answerIndex)).map(question => question.id))];
   if (!ids.length) return res.status(400).json({ error: 'Lượt này chưa có câu đã trả lời sai và còn đáp án xác nhận để ôn.' });
   const questionOrder = shuffle(ids);
   const optionOrders = {};
   questionOrder.forEach((questionId) => { optionOrders[questionId] = shuffle([0, 1, 2, 3]); });
-  const result = db.prepare('INSERT INTO attempts (question_order, option_orders, owner_id) VALUES (?, ?, ?)').run(JSON.stringify(questionOrder), JSON.stringify(optionOrders), ownerId());
-  res.status(201).json(getAttempt(result.lastInsertRowid, true));
+  const result = (await db.prepare('INSERT INTO attempts (question_order, option_orders, owner_id) VALUES (?, ?, ?)').run(JSON.stringify(questionOrder), JSON.stringify(optionOrders), ownerId()));
+  res.status(201).json((await getAttempt(result.lastInsertRowid, true)));
 });
 
-app.get('/api/attempts/:attemptId/questions/:questionId/chat', (req, res) => {
-  const attempt = getAttempt(req.params.attemptId);
+app.get('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res) => {
+  const attempt = (await getAttempt(req.params.attemptId));
   if (!attempt || !attempt.questions.some(question => question.id === Number(req.params.questionId))) return res.status(404).json({ error: 'Không tìm thấy ngữ cảnh câu hỏi.' });
-  const messages = db.prepare('SELECT role, content, created_at AS createdAt FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(Number(req.params.attemptId), Number(req.params.questionId));
+  const messages = (await db.prepare('SELECT role, content, created_at AS createdAt FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(Number(req.params.attemptId), Number(req.params.questionId)));
   res.json(messages);
 });
 
 app.post('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res) => {
   if (process.env.QUIZ_TEACHER_ENABLED !== 'true') return res.status(403).json({ error: 'Giáo viên AI đang tạm khóa.' });
   const message = typeof req.body.message === 'string' ? req.body.message.trim().slice(0, 1000) : '';
-  const question = getQuestion(req.params.questionId);
-  const attempt = db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(req.params.attemptId), ownerId());
+  const question = (await getQuestion(req.params.questionId));
+  const attempt = (await db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(req.params.attemptId), ownerId()));
   if (!attempt || !question || !json(attempt.question_order, []).includes(question.id)) return res.status(404).json({ error: 'Không tìm thấy ngữ cảnh câu hỏi.' });
   if (!message) return res.status(400).json({ error: 'Hãy nhập câu hỏi cho AI.' });
   if (!aiConfig()) return res.status(503).json({ error: 'Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.' });
 
-  const history = db.prepare('SELECT role, content FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(attempt.id, question.id);
+  const history = (await db.prepare('SELECT role, content FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(attempt.id, question.id));
   const system = 'Bạn là gia sư trắc nghiệm. Chỉ giải thích đúng câu hỏi được cung cấp, ưu tiên gợi ý trước khi tiết lộ đáp án. Trả lời bằng tiếng Việt, giữ nguyên nội dung tiếng Anh nếu cần.';
   const order = json(attempt.option_orders, {})[question.id] || [0, 1, 2, 3];
   const selectedIndex = json(attempt.answers, {})[question.id];
@@ -469,11 +474,19 @@ app.post('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res)
   try { reply = await generateAI([{ role: 'system', content: `${system}\n\nNgữ cảnh câu hỏi đang học:\n${userContext}` }, ...history, { role: 'user', content: message }], { maxTokens: 500 }); }
   catch (error) { return res.status(502).json({ error: error.message }); }
   const save = db.prepare('INSERT INTO chat_messages (attempt_id, question_id, role, content) VALUES (?, ?, ?, ?)');
-  save.run(attempt.id, question.id, 'user', message);
-  save.run(attempt.id, question.id, 'assistant', reply);
+  (await save.run(attempt.id, question.id, 'user', message));
+  (await save.run(attempt.id, question.id, 'assistant', reply));
   res.json({ role: 'assistant', content: reply });
 });
 
 app.use((req, res) => res.redirect('/'));
-if (require.main === module) app.listen(port, () => console.log(`PRO QUIZ APP đang chạy tại http://localhost:${port}`));
+app.use((error, _req, res, _next) => {
+  console.error('Request failed.', /^[A-Z0-9]{5}$/.test(error.code || '') ? error.code : '');
+  res.status(500).json({error:'Không thể xử lý yêu cầu. Vui lòng thử lại.'});
+});
+if (require.main === module) db.ready.then(() => app.listen(port, () => console.log(`PRO QUIZ APP đang chạy tại http://localhost:${port}`))).catch(() => {
+  console.error('Không thể kết nối database. Kiểm tra cấu hình trên máy chủ.');
+  process.exitCode = 1;
+  db.close();
+});
 module.exports = app;

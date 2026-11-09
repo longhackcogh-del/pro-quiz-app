@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/longhackcogh-del/pro-quiz-app/actions/workflows/ci.yml/badge.svg)](https://github.com/longhackcogh-del/pro-quiz-app/actions/workflows/ci.yml)
 
-[Mở cấu hình triển khai trên Render](https://render.com/deploy?repo=https://github.com/longhackcogh-del/pro-quiz-app) — dùng gói trả phí có persistent disk; xem và chấp nhận chi phí trên Render trước khi tạo.
+[Mở cấu hình triển khai trên Render](https://render.com/deploy?repo=https://github.com/longhackcogh-del/pro-quiz-app) — dùng Render Free và Neon PostgreSQL Free, không gắn ổ lưu trữ trả phí.
 
 ## Chức năng
 
@@ -17,7 +17,7 @@
 
 ## Công nghệ
 
-HTML/CSS/JavaScript thuần → Express trên Node.js 24 → SQLite (`node:sqlite`). Google OAuth xác thực tài khoản; Gemini được tích hợp tại backend.
+HTML/CSS/JavaScript thuần → Express trên Node.js 24 → PostgreSQL (Neon) hoặc SQLite (`node:sqlite`) cho local. Google OAuth xác thực tài khoản; Gemini được tích hợp tại backend.
 
 ## Giao diện
 
@@ -53,7 +53,7 @@ Tests dùng database tạm và nhà cung cấp Google/AI mô phỏng, không g�
 
 [Hướng dẫn Render](DEPLOY-RENDER.md) · [Cấu hình Blueprint](render.yaml) · [GitHub Actions](.github/workflows/ci.yml)
 
-Blueprint dùng **dịch vụ trả phí và persistent disk**, giữ SQLite qua restart/deploy. Không tạo dịch vụ trả phí trước khi chủ tài khoản xem chi phí. Sau khi kết nối GitHub và Render, deploy tự động khi các checks của commit trên nhánh triển khai đã pass. `/healthz` kiểm tra ứng dụng truy cập được database.
+Blueprint dùng **Render Free và PostgreSQL bên ngoài**. Điền DATABASE_URL của Neon trên hosting để giữ dữ liệu qua restart/deploy. Render có thể ngủ khi không có truy cập, lượt mở đầu sẽ chậm hơn; cả hai nền tảng có hạn mức miễn phí. Sau khi kết nối GitHub và Render, deploy tự động khi các checks của commit đã pass. `/healthz` kiểm tra kết nối database.
 
 Ứng dụng chạy trên hosting sẽ không phụ thuộc VS Code hoặc máy cá nhân.
 
@@ -65,7 +65,11 @@ server/app.js              API nhập đề, luyện tập, chấm điểm, AI
 server/google-auth.js      Google OAuth và phiên đăng nhập
 server/ownership.js        Phân quyền và nhận kho chung cũ
 server/question-sets.js    Quản lý bộ câu hỏi cá nhân
-server/database.js         Schema SQLite và migration
+server/database.js         Chọn PostgreSQL hoặc SQLite
+server/database-postgres.js Driver PostgreSQL và transaction
+server/database-sqlite.js   Schema/migration SQLite local
+server/schema-postgres.sql  Schema PostgreSQL
+scripts/                   Chuyển dữ liệu SQLite sang PostgreSQL
 server/parser.js           Tách câu hỏi A–D và đáp án
 server/gemini.js           Gọi Gemini từ backend
 tests/                     API và browser integration tests

@@ -1,0 +1,24 @@
+﻿BEGIN;
+CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS question_sets (id SERIAL PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100));
+CREATE TABLE IF NOT EXISTS questions (
+ id SERIAL PRIMARY KEY, prompt TEXT NOT NULL, source_text TEXT NOT NULL,
+ answer_index INTEGER, answer_status TEXT NOT NULL DEFAULT 'unconfirmed', answer_source TEXT NOT NULL DEFAULT 'not_provided',
+ ai_suggestion_index INTEGER, ai_suggestion_reason TEXT,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ owner_id TEXT REFERENCES users(id), set_id INTEGER REFERENCES question_sets(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS options (id SERIAL PRIMARY KEY, question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE, option_index INTEGER NOT NULL, text TEXT NOT NULL, UNIQUE(question_id,option_index));
+CREATE TABLE IF NOT EXISTS attempts (
+ id SERIAL PRIMARY KEY, status TEXT NOT NULL DEFAULT 'in_progress', question_order TEXT NOT NULL, option_orders TEXT NOT NULL,
+ answers TEXT NOT NULL DEFAULT '{}', current_index INTEGER NOT NULL DEFAULT 0, score INTEGER NOT NULL DEFAULT 0,
+ started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ completed_at TIMESTAMPTZ, owner_id TEXT REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS wrong_answers (id SERIAL PRIMARY KEY, attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE, question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE, selected_index INTEGER, created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(attempt_id,question_id));
+CREATE TABLE IF NOT EXISTS chat_messages (id SERIAL PRIMARY KEY, attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE, question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS questions_owner ON questions(owner_id,id);
+CREATE INDEX IF NOT EXISTS attempts_owner ON attempts(owner_id,status,updated_at);
+CREATE INDEX IF NOT EXISTS question_sets_owner ON question_sets(owner_id);
+COMMIT;
