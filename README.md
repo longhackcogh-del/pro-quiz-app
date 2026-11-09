@@ -2,6 +2,10 @@
 
 Ứng dụng luyện thi cá nhân: nhập tài liệu, xác nhận đáp án, quản lý bộ câu hỏi và ôn câu sai. Dữ liệu được tách theo tài khoản Google.
 
+[![CI](https://github.com/longhackcogh-del/pro-quiz-app/actions/workflows/ci.yml/badge.svg)](https://github.com/longhackcogh-del/pro-quiz-app/actions/workflows/ci.yml)
+
+[Mở cấu hình triển khai trên Render](https://render.com/deploy?repo=https://github.com/longhackcogh-del/pro-quiz-app) — dùng gói trả phí có persistent disk; xem và chấp nhận chi phí trên Render trước khi tạo.
+
 ## Chức năng
 
 - Google OAuth với authorization code, PKCE và cookie phiên phía server.
@@ -14,6 +18,14 @@
 ## Công nghệ
 
 HTML/CSS/JavaScript thuần → Express trên Node.js 24 → SQLite (`node:sqlite`). Google OAuth xác thực tài khoản; Gemini được tích hợp tại backend.
+
+## Giao diện
+
+Ảnh chụp từ kiểm thử trình duyệt với dữ liệu và tài khoản mô phỏng.
+
+![Kho câu hỏi trên desktop](docs/screenshots/question-bank.png)
+
+<img src="docs/screenshots/mobile-bank.png" alt="Kho câu hỏi trên điện thoại" width="320">
 
 ## Chạy local
 

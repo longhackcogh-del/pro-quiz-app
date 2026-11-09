@@ -12,6 +12,9 @@ test('Account isolation, legacy ownership and private question sets',async t=>{
   const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.on('listening',resolve));
   t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();fs.rmSync(directory,{recursive:true,force:true});});
   const base='http://127.0.0.1:'+server.address().port;
+  const health=await fetch(base+'/healthz');
+  assert.equal(health.status,200);
+  assert.deepEqual(await health.json(),{status:'ok'});
   const legacy=Number(db.prepare("INSERT INTO questions (prompt,source_text) VALUES ('legacy','legacy')").run().lastInsertRowid);
   const b=await authenticatedFetch(base,'user-b','other@example.com');
   const request=async(fetcher,route,body,method='POST',headers={})=>{
