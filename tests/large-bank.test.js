@@ -5,7 +5,7 @@ test('Large bank: 5000 questions use bounded queries and compact answer response
  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.on('listening',resolve));const base='http://127.0.0.1:'+server.address().port;
  const prepare=db.prepare.bind(db);let queries=0;
  db.prepare=sql=>{const stmt=prepare(sql);return Object.fromEntries(['all','get','run'].map(method=>[method,async(...args)=>{queries++;await new Promise(resolve=>setTimeout(resolve,1));return stmt[method](...args);} ]));};
- t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();fs.rmSync(directory,{recursive:true,force:true});});
+ t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();const target=path.resolve(directory);if(path.dirname(target)!==path.resolve(os.tmpdir()) || !path.basename(target).startsWith('quiz-large-'))throw Error('Unexpected test cleanup path');fs.rmSync(target,{recursive:true,force:true});});
  const fetch=await authenticatedFetch(base);
  const request=async(route,body,method='POST')=>{const r=await fetch(base+route,body!==undefined?{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const data=await r.json();assert.ok(r.ok,JSON.stringify({route,status:r.status,data}));return data;};
  await request('/api/stats');queries=0;

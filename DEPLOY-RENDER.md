@@ -51,6 +51,8 @@ CHATBOT_URL để trống khi chưa có ứng dụng PDF HTTPS riêng. Không tr
 
 Sửa local → `npm test` → commit → push nhánh main. GitHub Actions kiểm tra cả SQLite và PostgreSQL 17. Render triển khai sau khi checks pass; nếu không có checks thì Render có thể deploy mà không chờ test, nên giữ workflow CI bật.
 
+Auto-deploy còn yêu cầu kết nối Git provider cho dịch vụ. Nếu tạo từ URL repo công khai mà chưa liên kết GitHub, cần **Manual Deploy → Deploy latest commit**. Kiểm tra commit đang Live có trùng commit mới trên GitHub; push thành công chưa xác nhận website đã cập nhật. Xem https://render.com/docs/deploys và https://render.com/docs/git-provider.
+
 Render Free ngủ sau 15 phút không có traffic; lượt truy cập đầu có thể chậm. Phiên đăng nhập lưu RAM nên restart/ngủ có thể yêu cầu đăng nhập lại; bài làm nằm trong Neon. Neon Free cũng có quota tài nguyên và có thể scale to zero. Các quota này do nhà cung cấp áp dụng, chưa phải giới hạn gói người dùng trong PRO QUIZ.
 
 Không có cam kết uptime hoặc chịu tải lớn. Sao lưu PostgreSQL định kỳ ra nơi riêng và thử khôi phục. Rollback code không tự rollback dữ liệu/schema. Database SQLite cũ vẫn giữ nguyên nhưng sẽ không nhận các thay đổi phát sinh ở Neon.
