@@ -23,7 +23,8 @@ async function api(url, options = {}) {
     throw new Error('Phiên đăng nhập đã thay đổi. Hãy đăng nhập lại để tiếp tục.');
   }
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || `Lỗi máy chủ (${response.status}).`);
+  if (privateRequest && (epoch!==accountEpoch || state.accountId!==account)) throw new Error('Tài khoản đã thay đổi. Dữ liệu cũ được bỏ qua.');
+  if (!response.ok) { const error=new Error(data?.error || `HTTP ${response.status}`); error.status=response.status; throw error; }
   if (data?.partial && url.includes('/answer')) {
     const previous=state.attempt;
     if (!previous || previous.id!==data.id || previous.total!==data.total || data.questions.some(question=>!previous.questions.some(old=>old.id===question.id))) return api('/api/attempts/'+data.id);
@@ -310,80 +311,155 @@ async function openWrongLogView() {
 function exportDataToTxt() { window.location.href = '/api/questions/export'; }
 function exportWrongLogToTxt() { window.location.href = '/api/wrong-answers/export'; }
 async function startQuizSession(questionIds = null) {
+  if (state.practiceLoading) return;
+  const load={};state.practiceLoading=load;
+  const trigger=document.activeElement;
+  const contents=trigger instanceof HTMLButtonElement ? [...trigger.childNodes] : null;
+  if (contents) {trigger.disabled=true;trigger.textContent='Đang mở bài…';}
   try {
     const active = await api('/api/attempts/active');
     if (active && active.status === 'in_progress' && window.confirm('Phát hiện một lượt làm bài đang dở. Bạn có muốn làm tiếp không?')) state.attempt = active;
     else state.attempt = await api('/api/attempts', post(questionIds ? { questionIds } : {}));
     await showQuiz();
   } catch (error) { showError(error); }
+  finally {if(state.practiceLoading===load)state.practiceLoading=null;if(contents){trigger.replaceChildren(...contents);trigger.disabled=false;}}
 }
-async function showQuiz() { setView('v-quiz'); renderActiveQuestion(); await loadChatForCurrentQuestion(); }
+let practiceRun=0;
+let pendingAnswerSave=null;
+function resetPracticeInteraction() {
+  practiceRun++;
+  window.clearTimeout(state.transitionTimer);
+  state.answerPending=null;
+  state.submitting=null;
+  state.navigationPending=false;
+  state.savedCursor=null;
+  state.busy=false;
+  pendingAnswerSave=null;
+}
+async function showQuiz() {
+  resetPracticeInteraction();
+  state.savedCursor={id:state.attempt.id,index:state.attempt.currentIndex};
+  setView('v-quiz');renderActiveQuestion();await loadChatForCurrentQuestion();
+}
 function currentQuestion() { return state.attempt?.questions?.[state.attempt.currentIndex]; }
 function renderActiveQuestion(message = '') {
   const attempt = state.attempt;
-  if (!attempt?.questions?.length) return;
+  if (!attempt?.questions?.length) {
+    $('#quiz-options-container').replaceChildren();
+    $('#quiz-question-container').textContent='Bài này không còn câu hỏi để luyện tập. Hãy tạo bài mới từ kho câu hỏi.';
+    $('#quiz-prev-btn').style.display='none';$('#quiz-next-btn').hidden=true;
+    return;
+  }
   const question = currentQuestion();
+  if (!question) return;
+  const pending=state.answerPending?.attemptId===attempt.id && state.answerPending?.questionId===question.id ? state.answerPending : null;
+  $('#quiz-options-container').setAttribute('aria-busy',String(Boolean(pending)));
+  $('#quiz-prev-btn').disabled=Boolean(pending || state.submitting || state.navigationPending);
+  $('#quiz-next-btn').hidden=Boolean(pending || !Number.isInteger(question.selectedIndex));
+  $('#quiz-next-btn').disabled=Boolean(state.submitting || state.navigationPending);
+  $('#quiz-next-btn').textContent=attempt.currentIndex+1<attempt.total ? 'Câu tiếp →' : 'Xem kết quả';
   $('#quiz-progress-lbl').textContent = `Câu ${attempt.currentIndex + 1}/${attempt.total}`;
-  $('#quiz-score-lbl').textContent = `Điểm số: ${attempt.score || 0}`;
+  const liveScore=attempt.status==='completed' ? attempt.score : attempt.questions.filter(q=>q.selectedIndex!=null && q.selectedIndex===q.answerIndex).length;
+  $('#quiz-score-lbl').textContent = `Điểm số: ${liveScore || 0}`;
   $('#quiz-question-container').textContent = question.prompt;
   $('#quiz-options-container').innerHTML = question.options.map((option, index) => {
     const correct = question.answerIndex === option.index;
-    const selected = question.selectedIndex === option.index;
-    const resultClass = selected ? (correct ? 'correct' : 'wrong') : '';
-    return `<button class="option-item ${resultClass}" data-option-index="${option.index}" aria-pressed="${selected}"><span class="option-badge">${letter(index)}.</span><span>${escapeHtml(option.text)}</span></button>`;
+    const selected = (pending ? pending.selectedIndex : question.selectedIndex) === option.index;
+    const resultClass = selected ? (pending ? 'pending' : correct ? 'correct' : 'wrong') : !pending && Number.isInteger(question.selectedIndex) && correct ? 'correct-answer' : '';
+    return `<button class="option-item ${resultClass}" ${state.busy ? 'disabled' : ''} data-option-index="${option.index}" aria-pressed="${selected}"><span class="option-badge">${letter(index)}.</span><span>${escapeHtml(option.text)}</span></button>`;
   }).join('');
   document.querySelectorAll('#quiz-options-container .option-item').forEach((item) => item.addEventListener('click', () => chooseAnswer(Number(item.dataset.optionIndex))));
   $('#quiz-prev-btn').style.display = attempt.currentIndex > 0 ? 'inline-flex' : 'none';
   if (message) appendMessageToChatWindow('system', message);
 }
 async function chooseAnswer(index) {
-  if (state.busy) return;
-  state.busy = true;
-  const question = currentQuestion();
-  const attemptId = state.attempt.id;
+  if (state.busy || !Number.isInteger(index) || index<0 || index>3) return;
+  const question=currentQuestion();if(!question)return;
+  const attemptId=state.attempt.id,position=state.attempt.currentIndex,run=practiceRun;
+  const nextIndex=Math.min(position+1,state.attempt.total-1);
+  state.busy=true;state.answerPending={attemptId,questionId:question.id,selectedIndex:index};
+  renderActiveQuestion();
+  const request=api('/api/attempts/'+attemptId+'/answer',{...post({feedbackOnly:true,questionId:question.id,selectedIndex:index,currentIndex:nextIndex}),method:'PATCH',signal:AbortSignal.timeout(15000)});
+  pendingAnswerSave=request;
   try {
-    const savedAttempt = await api(`/api/attempts/${attemptId}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ compact: true, questionId: question.id, selectedIndex: index, currentIndex: state.attempt.currentIndex }) });
-    if (state.attempt?.id !== attemptId) return;
-    state.attempt = savedAttempt;
-    const updated = currentQuestion();
-    const correct = updated.answerIndex === index;
+    const saved=await request;
+    if (practiceRun!==run || state.attempt?.id!==attemptId || currentQuestion()?.id!==question.id || state.view!=='v-quiz') return;
+    if (!saved.feedback || saved.feedback.questionId!==question.id) throw Error('Không nhận được kết quả chấm hợp lệ. Hãy thử lại.');
+    question.selectedIndex=saved.feedback.selectedIndex;question.answerIndex=saved.feedback.answerIndex;
+    state.attempt.updatedAt=saved.updatedAt;
+    state.savedCursor={id:attemptId,index:saved.currentIndex};state.answerPending=null;
     renderActiveQuestion();
-    appendMessageToChatWindow('system', correct ? `Chính xác! Đáp án đúng chính là [${letter(updated.options.findIndex((option) => option.index === index))}].` : `Bạn trả lời chưa đúng. Đáp án đã xác nhận là [${letter(updated.options.findIndex((option) => option.index === updated.answerIndex))}].`);
-    if (!correct) runAutoAIEvaluation(updated, index);
-    state.transitionTimer = window.setTimeout(async () => {
-      try {
-        if (!state.attempt || state.attempt.id !== attemptId || state.view !== 'v-quiz') return;
-        if (state.attempt.currentIndex + 1 < state.attempt.total) {
-          state.attempt = await api(`/api/attempts/${state.attempt.id}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ compact: true, questionId: updated.id, selectedIndex: index, currentIndex: state.attempt.currentIndex + 1 }) });
-          renderActiveQuestion();
-          await loadChatForCurrentQuestion();
-        } else await finishQuiz();
-      } catch (error) { showError(error); }
-      finally { if (state.attempt?.id === attemptId) state.busy = false; }
-    }, correct ? 1200 : 2500);
-  } catch (error) { state.busy = false; showError(error); }
+    appendMessageToChatWindow('system',saved.feedback.correct ? 'Chính xác!' : `Chưa đúng. Đáp án: ${letter(question.options.findIndex(option=>option.index===question.answerIndex))}.`);
+    if (!saved.feedback.correct) runAutoAIEvaluation(question,index);
+    state.transitionTimer=window.setTimeout(()=>advancePractice(attemptId,question.id,run),saved.feedback.correct?350:650);
+  } catch(error) {
+    if (practiceRun!==run || state.attempt?.id!==attemptId) return;
+    state.answerPending=null;state.busy=false;
+    if (error.status===409) {
+      try {state.attempt=await api('/api/attempts/'+attemptId);state.savedCursor={id:attemptId,index:state.attempt.currentIndex};}catch{}
+    }
+    if (state.view==='v-quiz') {renderActiveQuestion();showError(error.name==='TimeoutError' ? new Error('Chưa nhận được xác nhận lưu từ máy chủ. Hãy kiểm tra kết nối và chọn lại đáp án.') : error);}
+  } finally {
+    if(pendingAnswerSave===request)pendingAnswerSave=null;
+    if(practiceRun===run && state.attempt?.id===attemptId && state.view!=='v-quiz'){state.answerPending=null;state.busy=false;}
+  }
+}
+async function navigatePractice(index) {
+  if (!state.attempt || state.answerPending || state.submitting || state.navigationPending || index<0 || index>=state.attempt.total) return;
+  window.clearTimeout(state.transitionTimer);
+  const attemptId=state.attempt.id,previous=state.attempt.currentIndex,run=practiceRun;
+  const saved=state.savedCursor?.id===attemptId && state.savedCursor.index===index;
+  state.attempt.currentIndex=index;state.busy=!saved;state.navigationPending=!saved;renderActiveQuestion();
+  if (!saved) {
+    try {
+      const cursor=await api('/api/attempts/'+attemptId+'/cursor',{...post({currentIndex:index}),method:'PATCH',signal:AbortSignal.timeout(15000)});
+      if(practiceRun!==run || state.attempt?.id!==attemptId)return;
+      state.savedCursor={id:attemptId,index:cursor.currentIndex};state.attempt.updatedAt=cursor.updatedAt;
+    } catch(error) {
+      if(practiceRun!==run || state.attempt?.id!==attemptId)return;
+      state.attempt.currentIndex=previous;showError(error);
+    } finally {
+      if(practiceRun===run && state.attempt?.id===attemptId){state.busy=false;state.navigationPending=false;if(state.view==='v-quiz')renderActiveQuestion();}
+    }
+  }
+  if(practiceRun===run && state.attempt?.id===attemptId && state.view==='v-quiz')loadChatForCurrentQuestion();
+}
+async function advancePractice(attemptId=state.attempt?.id,questionId=currentQuestion()?.id,run=practiceRun) {
+  if(practiceRun!==run || state.attempt?.id!==attemptId || state.view!=='v-quiz' || currentQuestion()?.id!==questionId || state.answerPending || state.submitting || !Number.isInteger(currentQuestion()?.selectedIndex))return;
+  window.clearTimeout(state.transitionTimer);
+  if(state.attempt.currentIndex+1<state.attempt.total)await navigatePractice(state.attempt.currentIndex+1);
+  else await finishQuiz();
 }
 async function handleQuizPrev() {
-  if (!state.attempt || state.attempt.currentIndex <= 0) return;
-  const question = currentQuestion();
-  try {
-    state.attempt = await api(`/api/attempts/${state.attempt.id}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ compact: true, questionId: question.id, selectedIndex: question.selectedIndex, currentIndex: state.attempt.currentIndex - 1 }) });
-    renderActiveQuestion(); await loadChatForCurrentQuestion();
-  } catch (error) { showError(error); }
+  if(!state.attempt || state.attempt.currentIndex<=0 || state.answerPending || state.submitting)return;
+  await navigatePractice(state.attempt.currentIndex-1);
 }
-function abortQuizSession() { if (window.confirm('Lưu tiến trình hiện tại và quay về Menu?')) backToMenu(); }
+async function abortQuizSession() {
+  if(!window.confirm('Lưu tiến trình và thoát luyện tập?'))return;
+  if(pendingAnswerSave){try{await pendingAnswerSave;}catch{return;}}
+  backToMenu();
+}
 async function finishQuiz() {
+  const attemptId=state.attempt?.id,run=practiceRun;
+  if(!attemptId || state.attempt.status!=='in_progress')return;
+  if(pendingAnswerSave){try{await pendingAnswerSave;}catch{return;}}
+  if(practiceRun!==run || state.attempt?.id!==attemptId || state.submitting===attemptId)return;
+  state.submitting=attemptId;state.busy=true;window.clearTimeout(state.transitionTimer);renderActiveQuestion();
+  $('#practiceFeedback').textContent='Đang tổng kết kết quả…';
   try {
-    state.attempt = await api(`/api/attempts/${state.attempt.id}/submit`, { method: 'POST' });
-    const wrong = state.attempt.questions.filter((question) => question.selectedIndex !== question.answerIndex);
-    $('#result-score-summary').textContent = `Kết quả: ${state.attempt.score}/${state.attempt.total} câu chính xác`;
-    $('#btn-retest-incorrect-only').style.display = wrong.length ? 'inline-flex' : 'none';
-    $('#btn-retest-incorrect-only').textContent = `Ôn tập nhanh ${wrong.length} câu làm sai`;
-    state.busy = false;
-    setView('v-result');
-    await refreshHeader();
-  } catch (error) { showError(error); }
+    const result=await api('/api/attempts/'+attemptId+'/submit',{method:'POST',signal:AbortSignal.timeout(30000)});
+    if(practiceRun!==run || state.attempt?.id!==attemptId || state.view!=='v-quiz')return;
+    state.attempt=result;
+    const wrong=result.questions.filter(q=>q.selectedIndex!==q.answerIndex);
+    $('#result-score-summary').textContent=`Kết quả: ${result.score}/${result.total} câu chính xác`;
+    $('#btn-retest-incorrect-only').style.display=wrong.length?'inline-flex':'none';
+    $('#btn-retest-incorrect-only').textContent=`Ôn tập nhanh ${wrong.length} câu làm sai`;
+    state.busy=false;setView('v-result');await refreshHeader();
+  } catch(error) {
+    if(practiceRun===run && state.attempt?.id===attemptId){state.busy=false;if(state.view==='v-quiz')renderActiveQuestion();showError(error);}
+  } finally {if(practiceRun===run && state.attempt?.id===attemptId){state.submitting=null;state.busy=false;}}
 }
+
 async function retestIncorrectOnly() {
   try { state.attempt = await api(`/api/attempts/${state.attempt.id}/retry-wrong`, { method: 'POST' }); state.busy = false; await showQuiz(); }
   catch (error) { showError(error); }
@@ -395,7 +471,12 @@ function appendMessageToChatWindow(sender, content) {
   $('#ai-messages-box').appendChild(bubble);
   $('#ai-messages-box').scrollTop = $('#ai-messages-box').scrollHeight;
 }
-async function loadChatForCurrentQuestion() {
+async function loadChatForCurrentQuestion(force=false) {
+  if(!state.teacherEnabled && !force){
+    $('#ai-messages-box').replaceChildren();
+    appendMessageToChatWindow('system','Giáo viên AI đang tạm khóa. Tiến trình luyện tập vẫn được lưu bình thường.');
+    return;
+  }
   const question = currentQuestion();
   if (!question) return;
   const attemptId = state.attempt.id;

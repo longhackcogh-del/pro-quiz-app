@@ -79,7 +79,9 @@ async function bulkDelete() {
   renderBank();
   let deleted = 0;
   try {
-    for (const id of [...bankSelected]) { await api(`/api/questions/${id}`,{method:'DELETE'}); bankSelected.delete(id); deleted++; }
+    const ids=[...bankSelected];
+    const result=await api('/api/questions/bulk-delete',post({questionIds:ids}));
+    deleted=result.deleted;ids.forEach(id=>bankSelected.delete(id));
     toast(`Đã xóa ${deleted} câu hỏi.`);
   } catch (error) { showError(new Error(`Đã xóa ${deleted} câu. ${error.message}`)); }
   finally { bankMutationBusy = false; await openViewQuestions(); await refreshHeader().catch(showError); }
@@ -93,7 +95,8 @@ async function bulkConfirm() {
   renderBank();
   let confirmed = 0;
   try {
-    for (const question of candidates) { await api(`/api/questions/${question.id}`,{...post({answerIndex:question.answer}),method:'PATCH'}); bankSelected.delete(question.id); bankAnswerDrafts.delete(question.id); confirmed++; }
+    const result=await api('/api/questions/bulk-confirm',post({questions:candidates.map(q=>({id:q.id,answerIndex:q.answer}))}));
+    confirmed=result.confirmed;candidates.forEach(q=>{bankSelected.delete(q.id);bankAnswerDrafts.delete(q.id);});
     toast(`Đã xác nhận ${confirmed} câu hỏi.`);
   } catch (error) { showError(new Error(`Đã xác nhận ${confirmed} câu. ${error.message}`)); }
   finally { bankMutationBusy = false; await openViewQuestions(); await refreshHeader().catch(showError); }

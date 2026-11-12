@@ -10,6 +10,9 @@
 
 ## Thay đổi
 
+- Luyện tập dùng `feedbackOnly=true`: một request lưu đáp án cùng vị trí câu tiếp theo, hai truy vấn SQL, phản hồi khoảng 180 byte. Giao diện đánh dấu lựa chọn ngay; chỉ hiển thị đúng/sai sau xác nhận của server. Chuyển câu sau 350 ms (đúng) hoặc 650 ms (sai), có nút chuyển ngay.
+- Không tải lịch sử chat mỗi câu khi Giáo viên AI đang khóa. Chống nhấn đáp án/nộp bài lặp và phát hiện xung đột ghi từ hai tab; lỗi mạng không hiển thị kết quả chấm giả.
+- Xác nhận và xóa nhiều câu gọi API theo lô, kiểm tra quyền sở hữu toàn bộ trước khi ghi. Với 5.000 câu, xác nhận dùng 8 truy vấn; xóa 3.000 câu dùng 4 truy vấn.
 - JOIN câu hỏi/lựa chọn theo chủ tài khoản; truy vấn nhóm ID tối đa 2.000 tham số câu hỏi mỗi lần.
 - Bỏ truy vấn cho câu chưa trả lời khi tính câu sai. Gộp truy vấn dashboard ở frontend.
 - Ghi câu hỏi theo lô 500, ghi câu sai theo lô 1.000, giữ transaction cho cả lần nhập.
@@ -30,6 +33,8 @@
 - Kiểm tra gắn lựa chọn/ID, chấm điểm, câu sai và phân quyền tài khoản.
 
 Browser test dựng preview 5.000 câu, xác nhận chỉ 25 form xuất hiện, sửa nội dung/chọn đáp án rồi chuyển trang không mất bản nháp.
+
+Browser test cũng mô phỏng phản hồi chậm, mất mạng, nhấn nộp hai lần và xác nhận một request cho mỗi đáp án, không đọc chat khi khóa. `tests/practice-flow.test.js` kiểm tra vị trí tiếp tục, chấm điểm phía server và hai tab ghi đồng thời; `tests/bulk-actions.test.js` kiểm tra phân quyền cho thao tác theo lô.
 
 PostgreSQL integration test nhập 501 câu để vượt ranh giới một lô, kiểm tra options/ID, tạo bài và phản hồi compact. CI dùng PostgreSQL 17 riêng; lần thử với tài khoản fixture trên Neon thật ngày 12/11/2026 đo bulk import khoảng 609 ms từ máy phát triển. Các fixture được dọn theo đúng owner test.
 

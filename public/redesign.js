@@ -15,6 +15,7 @@ function toggleStudyChat(open) {
   const panel = $('#study-chat');
   const expanded = typeof open === 'boolean' ? open : !panel.classList.contains('open');
   panel.classList.toggle('open', expanded);
+  if (expanded && state.view==='v-quiz') loadChatForCurrentQuestion(true);
   $('#study-chat-toggle').setAttribute('aria-expanded', String(expanded));
   if (expanded && !$('#ai-chat-input-field').disabled) $('#ai-chat-input-field').focus();
   if (!expanded) $('#study-chat-toggle').focus();
@@ -55,6 +56,7 @@ async function resumeAttempt(id) {
 }
 const originalSetView = setView;
 setView = function(view) {
+  if (state.view==='v-quiz' && view!=='v-quiz') resetPracticeInteraction();
   originalSetView(view);
   $('#view-title').textContent = viewNames[view] || 'PRO QUIZ';
   const group = view === 'v-result' ? 'v-quiz' : ['v-help','v-reset'].includes(view) ? 'v-settings' : view;
@@ -101,7 +103,8 @@ renderActiveQuestion = function(message = '') {
   $('#practiceBar').style.width = `${(state.attempt.currentIndex + 1) * 100 / state.attempt.total}%`;
   $('#practiceNumber').textContent = `QUESTION ${String(state.attempt.currentIndex + 1).padStart(2,'0')}`;
   const question = currentQuestion();
-  $('#practiceFeedback').textContent = question.selectedIndex == null ? 'Chọn đáp án để ghi nhận kết quả. Hệ thống tự chuyển câu sau phản hồi.' : question.selectedIndex === question.answerIndex ? '✓ Chính xác! Tiến trình đã được lưu.' : 'Chưa chính xác. Mở Giáo viên AI để xem giải thích.';
+  if (state.answerPending?.attemptId===state.attempt.id && state.answerPending?.questionId===question.id) { $('#practiceFeedback').textContent='Đang chấm và lưu lựa chọn…'; return; }
+  $('#practiceFeedback').textContent = question.selectedIndex == null ? 'Chọn đáp án để ghi nhận kết quả.' : question.selectedIndex === question.answerIndex ? '✓ Chính xác! Tiến trình đã được lưu.' : `Chưa đúng. Đáp án đã xác nhận: ${letter(question.options.findIndex(option=>option.index===question.answerIndex))}.`;
 };
 let toastTimer;
 function toast(message) {
@@ -116,6 +119,8 @@ function loginFeedback(message) {
   $('#login-feedback').hidden = !message;
 }
 function resetAccountData(accountId) {
+  resetPracticeInteraction();
+  state.practiceLoading=null;
   questionSets=[]; renderQuestionSets();
   $('#question-set-filter').value='all';
   accountEpoch++;

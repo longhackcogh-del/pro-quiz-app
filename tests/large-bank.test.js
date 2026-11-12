@@ -20,8 +20,13 @@ test('Large bank: 5000 questions use bounded queries and compact answer response
  queries=0;const compact=await request('/api/attempts/'+attempt.id+'/answer',{questionId:attempt.questions[0].id,selectedIndex:0,currentIndex:1,compact:true},'PATCH');
  assert.equal(compact.partial,true);assert.equal(compact.total,count);assert.equal(compact.questions.length,2);assert.ok(queries<=4);assert.ok(JSON.stringify(compact).length<2000);
  assert.equal(compact.questions.find(q=>q.id===attempt.questions[0].id).answerIndex,2);assert.ok(!Object.hasOwn(compact.questions.find(q=>q.id===attempt.questions[1].id),'answerIndex'));
+ queries=0;const feedback=await request('/api/attempts/'+attempt.id+'/answer',{questionId:attempt.questions[0].id,selectedIndex:0,currentIndex:1,feedbackOnly:true},'PATCH');
+ assert.equal(queries,2);assert.equal(feedback.feedback.correct,false);assert.ok(JSON.stringify(feedback).length<400);assert.ok(!feedback.questions);
  queries=0;const history=await request('/api/wrong-answers');assert.equal(history.length,1);assert.ok(queries<=3);
  queries=0;const result=await request('/api/attempts/'+attempt.id+'/submit',{});assert.equal(result.wrongCount,count);assert.ok(queries<20,'Grading must batch question reads and wrong-answer writes');
+ prepare("UPDATE questions SET answer_status='unconfirmed',answer_index=NULL WHERE owner_id=?").run('test-user');
+ queries=0;const confirmed=await request('/api/questions/bulk-confirm',{questions:bank.map(q=>({id:q.id,answerIndex:2}))});const confirmQueries=queries;assert.equal(confirmed.confirmed,count);assert.ok(confirmQueries<=8);
+ queries=0;const deleted=await request('/api/questions/bulk-delete',{questionIds:bank.slice(0,3000).map(q=>q.id)});const deleteQueries=queries;assert.equal(deleted.deleted,3000);assert.ok(deleteQueries<=4);
  const other=await authenticatedFetch(base,'other-large-user','other@example.com');assert.deepEqual(await other(base+'/api/questions').then(r=>r.json()),[]);
- t.diagnostic(JSON.stringify({questions:count,importQueries,listQueries:1,dashboardQueries,importMs,listMs,dashboardMs,compactBytes:JSON.stringify(compact).length}));
+ t.diagnostic(JSON.stringify({questions:count,importQueries,listQueries:1,dashboardQueries,importMs,listMs,dashboardMs,compactBytes:JSON.stringify(compact).length,feedbackBytes:JSON.stringify(feedback).length,confirmQueries,deleteQueries}));
 });

@@ -228,7 +228,8 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate('state.attempt.id'),earlyReviewId);
   assert.equal(await evaluate('state.attempt.status'),'in_progress');
   assert.equal(await evaluate('currentQuestion().selectedIndex'),null);
-  await evaluate(`(async()=>{state.attempt=await api('/api/attempts/${sourceAttemptId}');await showQuiz()})()`);
+  assert.equal((await evaluate(`api('/api/attempts/${sourceAttemptId}')`)).currentIndex,1);
+  await evaluate(`(async()=>{await api('/api/attempts/${sourceAttemptId}/cursor',{...post({currentIndex:0}),method:'PATCH'});state.attempt=await api('/api/attempts/${sourceAttemptId}');await showQuiz()})()`);
   for (let index=0; index<3; index++) {
     await evaluate("(()=>{const wrong=[...document.querySelectorAll('.option-item')].find(button => Number(button.dataset.optionIndex)!==state.questions.find(q=>q.id===currentQuestion().id).answerIndex);wrong.click()})()");
     await until(index===2 ? "state.view === 'v-result'" : `state.attempt.currentIndex === ${index+1} && !state.busy`);
@@ -408,6 +409,26 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,chapterBefore);
   await evaluate('saveImportPreview()');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,chapterBefore+1);
+  // A slow save must show selection immediately, never an invented grade.
+  await evaluate("(async()=>{const saved=await api('/api/questions/import',post({questions:['Fast one','Fast two'].map(prompt=>({prompt,options:['a','b','c','d'],answerIndex:1,confirmed:true}))}));state.attempt=await api('/api/attempts',post({questionIds:saved.imported.map(q=>q.id)}));state.teacherEnabled=false;await showQuiz();window.quizFetch=window.fetch;window.answerSends=0;window.chatReads=0;window.submitSends=0;window.fetch=(url,options)=>{if(String(url).endsWith('/chat'))window.chatReads++;if(String(url).endsWith('/submit'))window.submitSends++;if(String(url).endsWith('/answer')){window.answerSends++;return new Promise(resolve=>setTimeout(resolve,180)).then(()=>window.quizFetch(url,options));}return window.quizFetch(url,options);};window.pickTask=chooseAnswer(1).then(()=>{window.feedbackShown=!!document.querySelector('.option-item.correct')});window.immediatePick={pending:!!document.querySelector('.option-item.pending'),graded:!!document.querySelector('.option-item.correct,.option-item.wrong'),disabled:[...document.querySelectorAll('.option-item')].every(button=>button.disabled)};})()");
+  assert.deepEqual(await evaluate('window.immediatePick'),{pending:true,graded:false,disabled:true});
+  await evaluate('window.pickTask');
+  assert.equal(await evaluate('window.feedbackShown'),true);
+  await until('state.attempt.currentIndex===1 && !state.busy');
+  assert.equal(await evaluate('window.answerSends'),1);
+  assert.equal(await evaluate('window.chatReads'),0);
+  const fastAttempt=await evaluate('state.attempt.id');
+  assert.equal(db.prepare('SELECT current_index FROM attempts WHERE id=?').get(fastAttempt).current_index,1);
+  await evaluate("window.fetch=(url,options)=>String(url).endsWith('/answer')?Promise.reject(new Error('Test offline')):window.quizFetch(url,options);chooseAnswer(0)");
+  assert.equal(await evaluate('currentQuestion().selectedIndex'),null);
+  assert.equal(await evaluate('Boolean(state.answerPending)||state.busy'),false);
+  assert.equal(await evaluate("!!document.querySelector('.option-item.correct,.option-item.wrong,.option-item.pending')"),false);
+  await evaluate("window.fetch=(url,options)=>{if(String(url).endsWith('/submit'))window.submitSends++;return window.quizFetch(url,options)};chooseAnswer(1)");
+  await evaluate('Promise.all([finishQuiz(),finishQuiz()])');
+  assert.equal(await evaluate('window.submitSends'),1);
+  assert.equal(await evaluate('state.attempt.score'),2);
+  assert.equal(await evaluate('state.view'),'v-result');
+  await evaluate('window.fetch=window.quizFetch');
   await evaluate("renderImportPreview({questions:Array.from({length:5000},(_,i)=>({id:'large-'+i,prompt:'Preview '+i,options:['A','B','C','D'],answerIndex:2,answerStatus:'confirmed'}))})");
   assert.equal(await evaluate("document.querySelectorAll('#import-preview .preview-question').length"),25);
   await evaluate("document.querySelector('[data-prompt]').value='Edited first';document.querySelector('[data-prompt]').dispatchEvent(new Event('input'));changeImportPreviewPage(2)");

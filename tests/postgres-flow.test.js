@@ -80,5 +80,21 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  assert.equal(largeAttempt.total,501);
  const delta=(await request(a,'/api/attempts/'+largeAttempt.id+'/answer',{questionId:largeAttempt.questions[0].id,selectedIndex:0,currentIndex:1,compact:true},'PATCH')).data;
  assert.equal(delta.partial,true);assert.equal(delta.questions.length,2);assert.equal(delta.total,501);
+ const feedbackStart=performance.now();
+ const feedback=await request(a,'/api/attempts/'+largeAttempt.id+'/answer',{feedbackOnly:true,questionId:largeAttempt.questions[0].id,selectedIndex:2,currentIndex:1},'PATCH');
+ assert.equal(feedback.status,200);assert.equal(feedback.data.feedback.correct,true);assert.equal(feedback.data.currentIndex,1);assert.ok(!feedback.data.questions);
+ assert.equal((await request(a,'/api/attempts/'+largeAttempt.id+'/cursor',{currentIndex:0},'PATCH')).status,200);
+ const resumed=(await request(a,'/api/attempts/'+largeAttempt.id)).data;
+ assert.equal(resumed.currentIndex,0);assert.equal(resumed.questions[0].selectedIndex,2);
+ const concurrent=await Promise.all([1,2].map(index=>request(a,'/api/attempts/'+largeAttempt.id+'/answer',{feedbackOnly:true,questionId:largeAttempt.questions[index].id,selectedIndex:2,currentIndex:index},'PATCH')));
+ assert.ok(concurrent.every(r=>[200,409].includes(r.status)));
+ const synchronized=(await request(a,'/api/attempts/'+largeAttempt.id)).data;
+ assert.equal(synchronized.questions.filter(q=>q.selectedIndex!==null).length,1+concurrent.filter(r=>r.status===200).length);
+ await db.prepare("UPDATE questions SET answer_status='unconfirmed',answer_index=NULL WHERE owner_id=? AND id IN ("+bulk.data.imported.map(()=>'?').join(',')+")").run(owners[0],...bulk.data.imported.map(q=>q.id));
+ const bulkConfirmed=await request(a,'/api/questions/bulk-confirm',{questions:bulk.data.imported.map(q=>({id:q.id,answerIndex:2}))});assert.equal(bulkConfirmed.status,200);assert.equal(bulkConfirmed.data.confirmed,501);
+ assert.equal((await request(b,'/api/questions/bulk-delete',{questionIds:bulk.data.imported.slice(0,2).map(q=>q.id)})).status,404);
+ const bulkDeleted=await request(a,'/api/questions/bulk-delete',{questionIds:bulk.data.imported.slice(0,2).map(q=>q.id)});assert.equal(bulkDeleted.status,200);assert.equal(bulkDeleted.data.deleted,2);
+ t.diagnostic(JSON.stringify({feedbackOnlyBytes:JSON.stringify(feedback.data).length,feedbackAndResumeMs:Math.round(performance.now()-feedbackStart)}));
+
 
 });

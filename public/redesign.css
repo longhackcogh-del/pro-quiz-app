@@ -12,3 +12,5 @@ body{min-width:320px}a.btn{display:inline-flex;align-items:center;text-decoratio
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .question-set-tools {display:flex;flex-wrap:wrap;align-items:center;gap:10px;width:100%;margin-bottom:12px}.question-set-tools label {display:flex;align-items:center;gap:8px}.question-set-tools select {max-width:280px}.bulk-actions {flex-wrap:wrap}
 .preview-pagination {display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:16px}
+.option-item.pending{border-color:var(--cyan);background:#12394b;box-shadow:inset 0 0 0 1px var(--cyan)}.option-item:disabled{opacity:1;transform:none;cursor:default}#quiz-options-container[aria-busy=true] .option-item{cursor:progress}
+.practice-actions{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:20px}.option-item.correct-answer{border-color:#2dd49a;background:#123b35}

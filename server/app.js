@@ -167,7 +167,10 @@ function shuffle(items) {
 async function getAttempt(id, includeAnswer = false, visibleIds = null) {
   if (!Number.isSafeInteger(Number(id)) || Number(id) < 1) return null;
   const attempt = (await db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(id), ownerId()));
-  if (!attempt) return null;
+  return attempt ? serializeAttempt(attempt,includeAnswer,visibleIds) : null;
+}
+
+async function serializeAttempt(attempt,includeAnswer=false,visibleIds=null) {
   const questionOrder = json(attempt.question_order, []);
   const optionOrders = json(attempt.option_orders, {});
   const answers = json(attempt.answers, {});
@@ -284,6 +287,36 @@ app.use('/api/question-sets', require('./question-sets'));
 
 app.get('/api/questions', async (_req, res) => {
   res.json(await getQuestions());
+});
+
+async function ownsQuestions(ids) {
+  let count=0;
+  for(let start=0;start<ids.length;start+=2000){const chunk=ids.slice(start,start+2000);count+=(await db.prepare('SELECT COUNT(*) AS count FROM questions WHERE owner_id=? AND id IN ('+chunk.map(()=>'?').join(',')+')').get(ownerId(),...chunk)).count;}
+  return count===ids.length;
+}
+app.post('/api/questions/bulk-delete',async(req,res)=>{
+  const input=req.body.questionIds;
+  if(!Array.isArray(input)||!input.length||!input.every(id=>Number.isSafeInteger(id)&&id>0))return res.status(400).json({error:'Danh sách câu hỏi không hợp lệ.'});
+  const ids=[...new Set(input)];
+  const deleted=await db.transaction(async()=>{
+    if(!await ownsQuestions(ids))return null;
+    let count=0;for(let start=0;start<ids.length;start+=2000){const chunk=ids.slice(start,start+2000);count+=(await db.prepare('DELETE FROM questions WHERE owner_id=? AND id IN ('+chunk.map(()=>'?').join(',')+')').run(ownerId(),...chunk)).changes;}
+    return count;
+  });
+  if(deleted===null)return res.status(404).json({error:'Có câu hỏi không tồn tại hoặc không thuộc tài khoản của bạn.'});
+  res.json({deleted});
+});
+app.post('/api/questions/bulk-confirm',async(req,res)=>{
+  const questions=req.body.questions;
+  if(!Array.isArray(questions)||!questions.length||questions.some(q=>!q||!Number.isSafeInteger(q.id)||q.id<1||!validAnswer(q.answerIndex))||new Set(questions.map(q=>q.id)).size!==questions.length)return res.status(400).json({error:'Danh sách xác nhận đáp án không hợp lệ.'});
+  const confirmed=await db.transaction(async()=>{
+    if(!await ownsQuestions(questions.map(q=>q.id)))return null;
+    let count=0;
+    for(let start=0;start<questions.length;start+=1000){const chunk=questions.slice(start,start+1000);count+=(await db.prepare("UPDATE questions SET answer_index=CASE id "+chunk.map(()=>"WHEN ? THEN ?").join(' ')+" ELSE answer_index END,answer_status='confirmed',answer_source='user',updated_at=CURRENT_TIMESTAMP WHERE owner_id=? AND answer_status<>'confirmed' AND id IN ("+chunk.map(()=>'?').join(',')+")").run(...chunk.flatMap(q=>[q.id,q.answerIndex]),ownerId(),...chunk.map(q=>q.id))).changes;}
+    return count;
+  });
+  if(confirmed===null)return res.status(404).json({error:'Có câu hỏi không tồn tại hoặc không thuộc tài khoản của bạn.'});
+  res.json({confirmed});
 });
 
 app.get('/api/questions/:id', async (req, res, next) => {
@@ -410,18 +443,34 @@ app.get('/api/attempts/:id', async (req, res) => {
   res.json(attempt);
 });
 
-app.patch('/api/attempts/:id/answer', async (req, res) => {
-  const attempt = (await db.prepare("SELECT * FROM attempts WHERE id = ? AND status = 'in_progress' AND owner_id = ?").get(Number(req.params.id), ownerId()));
-  if (!attempt) return res.status(404).json({ error: 'Lượt làm bài không tồn tại hoặc đã kết thúc.' });
-  const questionId = Number(req.body.questionId);
-  const selectedIndex = req.body.selectedIndex === null ? null : Number(req.body.selectedIndex);
-  const questionOrder = json(attempt.question_order, []);
-  if (!questionOrder.includes(questionId) || (selectedIndex !== null && (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex > 3))) return res.status(400).json({ error: 'Lựa chọn không hợp lệ.' });
-  const answers = json(attempt.answers, {});
-  answers[questionId] = selectedIndex;
-  const currentIndex = Math.max(0, Math.min(questionOrder.length - 1, Number(req.body.currentIndex) || 0));
-  (await db.prepare('UPDATE attempts SET answers = ?, current_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(JSON.stringify(answers), currentIndex, attempt.id));
-  res.json(await getAttempt(attempt.id,true,req.body.compact === true ? [...new Set([questionId,questionOrder[currentIndex]])] : null));
+app.patch('/api/attempts/:id/answer', async (req,res) => {
+  const questionId=Number(req.body.questionId);
+  const selectedIndex=req.body.selectedIndex===null ? null : Number(req.body.selectedIndex);
+  if (!Number.isSafeInteger(questionId) || (selectedIndex!==null && !validAnswer(selectedIndex)) || (req.body.feedbackOnly===true && selectedIndex===null)) return res.status(400).json({error:'Lựa chọn không hợp lệ.'});
+  const attempt=await db.prepare("SELECT a.*,q.answer_index AS feedback_answer,q.answer_status AS feedback_status FROM attempts a LEFT JOIN questions q ON q.id=? AND q.owner_id=a.owner_id WHERE a.id=? AND a.status='in_progress' AND a.owner_id=?").get(questionId,Number(req.params.id),ownerId());
+  if (!attempt) return res.status(404).json({error:'Bài luyện tập không tồn tại hoặc đã kết thúc.'});
+  const order=json(attempt.question_order,[]);
+  if (!order.includes(questionId)) return res.status(400).json({error:'Câu hỏi không thuộc bài luyện tập này.'});
+  if (req.body.feedbackOnly===true && (attempt.feedback_status!=='confirmed' || !validAnswer(attempt.feedback_answer))) return res.status(409).json({error:'Câu hỏi đã thay đổi. Hãy tải lại bài luyện tập.'});
+  const answers=json(attempt.answers,{});answers[questionId]=selectedIndex;
+  const currentIndex=Math.max(0,Math.min(order.length-1,Math.trunc(Number(req.body.currentIndex)||0)));
+  const encoded=JSON.stringify(answers);
+  const saved=await db.prepare("UPDATE attempts SET answers=?,current_index=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND owner_id=? AND status='in_progress' AND answers=? RETURNING updated_at").get(encoded,currentIndex,attempt.id,ownerId(),attempt.answers);
+  if (!saved) return res.status(409).json({error:'Bài làm vừa thay đổi ở yêu cầu khác. Hãy tải lại và chọn lại đáp án.'});
+  if (req.body.feedbackOnly===true) return res.json({id:attempt.id,status:'in_progress',currentIndex,total:order.length,updatedAt:saved.updated_at,feedback:{questionId,selectedIndex,answerIndex:attempt.feedback_answer,correct:selectedIndex===attempt.feedback_answer}});
+  Object.assign(attempt,{answers:encoded,current_index:currentIndex,updated_at:saved.updated_at});
+  res.json(await serializeAttempt(attempt,true,req.body.compact===true ? [...new Set([questionId,order[currentIndex]])] : null));
+});
+
+app.patch('/api/attempts/:id/cursor', async (req,res) => {
+  const currentIndex=Number(req.body.currentIndex);
+  if (!Number.isInteger(currentIndex) || currentIndex<0) return res.status(400).json({error:'Vị trí câu hỏi không hợp lệ.'});
+  const attempt=await db.prepare("SELECT question_order FROM attempts WHERE id=? AND owner_id=? AND status='in_progress'").get(Number(req.params.id),ownerId());
+  if (!attempt) return res.status(404).json({error:'Bài luyện tập không tồn tại hoặc đã kết thúc.'});
+  if (currentIndex>=json(attempt.question_order,[]).length) return res.status(400).json({error:'Vị trí câu hỏi không hợp lệ.'});
+  const saved=await db.prepare("UPDATE attempts SET current_index=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND owner_id=? AND status='in_progress' RETURNING updated_at").get(currentIndex,Number(req.params.id),ownerId());
+  if (!saved) return res.status(409).json({error:'Bài luyện tập đã kết thúc.'});
+  res.json({id:Number(req.params.id),currentIndex,updatedAt:saved.updated_at});
 });
 
 app.post('/api/attempts/:id/submit', async (req, res) => {
@@ -438,13 +487,16 @@ app.post('/api/attempts/:id/submit', async (req, res) => {
     if (answers[questionId] !== undefined && answers[questionId] === question.answerIndex) score += 1;
     else wrong.push({ questionId, selectedIndex: answers[questionId] ?? null });
   });
-  await db.transaction(async () => {
-  (await db.prepare("UPDATE attempts SET status = 'completed', score = ?, updated_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(score, attempt.id));
+  const completed=await db.transaction(async () => {
+  const saved=await db.prepare("UPDATE attempts SET status='completed',score=?,updated_at=CURRENT_TIMESTAMP,completed_at=CURRENT_TIMESTAMP WHERE id=? AND owner_id=? AND status='in_progress' AND answers=? RETURNING id").get(score,attempt.id,ownerId(),attempt.answers);
+  if (!saved) return false;
   for (let offset=0;offset<wrong.length;offset+=1000) {
     const chunk=wrong.slice(offset,offset+1000);
     await db.prepare('INSERT OR REPLACE INTO wrong_answers (attempt_id,question_id,selected_index) VALUES '+chunk.map(()=>'(?,?,?)').join(',')).run(...chunk.flatMap(item=>[attempt.id,item.questionId,item.selectedIndex]));
   }
+  return true;
   });
+  if (!completed) return res.status(409).json({error:'Bài làm thay đổi trong lúc nộp. Hãy tải lại và nộp lại bài.'});
   res.json({ ...(await getAttempt(attempt.id, true)), score, wrongCount: wrong.length });
 });
 
