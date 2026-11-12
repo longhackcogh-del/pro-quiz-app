@@ -24,7 +24,7 @@ app.get('/healthz', async (_req,res) => {
   try { (await db.prepare('SELECT 1').get()); res.json({status:'ok'}); }
   catch { res.status(503).json({status:'unavailable'}); }
 });
-app.use(express.json({ limit: '200kb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(require('./google-auth').createGoogleAuth());
 app.use('/api', (req,res,next) => {
   if (['/ai/status','/integrations/pdf'].includes(req.path)) return next();
@@ -115,12 +115,21 @@ function mapQuestion(row, options = []) {
   };
 }
 
+async function getQuestions(ids = null) {
+  const groups = ids === null ? [null] : Array.from({length:Math.ceil(ids.length/2000)},(_,index)=>ids.slice(index*2000,index*2000+2000));
+  const result = new Map();
+  for (const group of groups) {
+    const rows = await db.prepare('SELECT q.*, o.option_index, o.text AS option_text FROM questions q LEFT JOIN options o ON o.question_id=q.id WHERE q.owner_id=?'+(group ? ' AND q.id IN ('+group.map(()=>'?').join(',')+')' : '')+' ORDER BY q.id,o.option_index').all(ownerId(),...(group || []));
+    for (const row of rows) {
+      if (!result.has(row.id)) result.set(row.id,mapQuestion(row,[]));
+      if (row.option_index !== null) result.get(row.id).options[row.option_index]=row.option_text;
+    }
+  }
+  return [...result.values()];
+}
 async function getQuestion(id) {
-  if (!Number.isSafeInteger(Number(id)) || Number(id) < 1) return null;
-  const row = (await db.prepare('SELECT * FROM questions WHERE id = ? AND owner_id = ?').get(Number(id), ownerId()));
-  if (!row) return null;
-  const options = (await db.prepare('SELECT option_index, text FROM options WHERE question_id = ? ORDER BY option_index').all(row.id)).map((option) => option.text);
-  return mapQuestion(row, options);
+  if (!Number.isSafeInteger(Number(id)) || Number(id)<1) return null;
+  return (await getQuestions([Number(id)]))[0] || null;
 }
 
 async function getStats() {
@@ -131,20 +140,19 @@ async function getStats() {
 }
 
 async function getWrongAnswers() {
-  const rows = (await db.prepare(`SELECT wrong_answers.question_id, wrong_answers.selected_index, wrong_answers.attempt_id, wrong_answers.created_at FROM wrong_answers JOIN attempts ON attempts.id = wrong_answers.attempt_id WHERE attempts.status = 'completed' AND attempts.owner_id = ? ORDER BY wrong_answers.id DESC`).all(ownerId()));
-  const entries = (await Promise.all(rows.map(async row => ({ ...(await getQuestion(row.question_id)), selectedIndex: row.selected_index, attemptId: row.attempt_id, wrongAt: row.created_at, attemptStatus: 'completed' }))));
-  const active = (await db.prepare("SELECT id, question_order, answers, updated_at FROM attempts WHERE status = 'in_progress' AND owner_id = ? ORDER BY updated_at DESC, id DESC").all(ownerId()));
+  const entries = (await db.prepare("SELECT w.question_id, w.selected_index, w.attempt_id, w.created_at FROM wrong_answers w JOIN attempts a ON a.id=w.attempt_id WHERE a.status='completed' AND a.owner_id=? ORDER BY w.id DESC").all(ownerId())).map(row=>({id:row.question_id,selectedIndex:row.selected_index,attemptId:row.attempt_id,wrongAt:row.created_at,attemptStatus:'completed'}));
+  const active = await db.prepare("SELECT id,question_order,answers,updated_at FROM attempts WHERE status='in_progress' AND owner_id=? ORDER BY updated_at DESC,id DESC").all(ownerId());
+  const pending=[];
   for (const attempt of active) {
-    const answers = json(attempt.answers, {});
-    for (const id of json(attempt.question_order, [])) {
-      const question = (await getQuestion(id));
-      const selectedIndex = answers[id];
-      if (question?.answerStatus === 'confirmed' && validAnswer(question.answerIndex) && validAnswer(selectedIndex) && selectedIndex !== question.answerIndex) {
-        entries.push({ ...question, selectedIndex, attemptId: attempt.id, wrongAt: attempt.updated_at, attemptStatus: 'in_progress' });
-      }
-    }
+    const answers=json(attempt.answers,{});
+    for (const id of json(attempt.question_order,[])) if (validAnswer(answers[id])) pending.push({id,selectedIndex:answers[id],attemptId:attempt.id,wrongAt:attempt.updated_at,attemptStatus:'in_progress'});
   }
-  return entries.sort((a,b) => b.wrongAt.localeCompare(a.wrongAt) || b.attemptId - a.attemptId);
+  const questions=new Map((await getQuestions([...new Set([...entries,...pending].map(entry=>entry.id))])).map(question=>[question.id,question]));
+  for (const entry of pending) {
+    const question=questions.get(entry.id);
+    if (question?.answerStatus==='confirmed' && validAnswer(question.answerIndex) && entry.selectedIndex!==question.answerIndex) entries.push(entry);
+  }
+  return entries.filter(entry=>questions.has(entry.id)).map(entry=>({...questions.get(entry.id),...entry})).sort((a,b)=>b.wrongAt.localeCompare(a.wrongAt)||b.attemptId-a.attemptId);
 }
 
 function shuffle(items) {
@@ -156,21 +164,22 @@ function shuffle(items) {
   return result;
 }
 
-async function getAttempt(id, includeAnswer = false) {
+async function getAttempt(id, includeAnswer = false, visibleIds = null) {
   if (!Number.isSafeInteger(Number(id)) || Number(id) < 1) return null;
   const attempt = (await db.prepare('SELECT * FROM attempts WHERE id = ? AND owner_id = ?').get(Number(id), ownerId()));
   if (!attempt) return null;
   const questionOrder = json(attempt.question_order, []);
   const optionOrders = json(attempt.option_orders, {});
   const answers = json(attempt.answers, {});
-  const questions = (await Promise.all(questionOrder.map(async (questionId) => {
-    const question = (await getQuestion(questionId));
+  const storedQuestions = new Map((await getQuestions(visibleIds || questionOrder)).map(question=>[question.id,question]));
+  const questions = questionOrder.filter(questionId=>!visibleIds || visibleIds.includes(questionId)).map(questionId => {
+    const question = storedQuestions.get(questionId);
     if (!question) return null;
     const order = optionOrders[questionId] || [0, 1, 2, 3];
     const revealAnswer = includeAnswer && (attempt.status === 'completed' || validAnswer(answers[questionId]));
     return { id: question.id, prompt: question.prompt, options: order.map((optionIndex) => ({ index: optionIndex, text: question.options[optionIndex] })), selectedIndex: answers[questionId] ?? null, answerStatus: question.answerStatus, ...(revealAnswer && { answerIndex: question.answerIndex }) };
-  }))).filter(Boolean);
-  return { id: attempt.id, status: attempt.status, currentIndex: attempt.current_index, score: attempt.score, total: questions.length, questions, updatedAt: attempt.updated_at };
+  }).filter(Boolean);
+  return { ...(visibleIds && {partial:true}), id: attempt.id, status: attempt.status, currentIndex: attempt.current_index, score: attempt.score, total: visibleIds ? questionOrder.length : questions.length, questions, updatedAt: attempt.updated_at };
 }
 
 app.get('/api/stats', async (_req, res) => res.json((await getStats())));
@@ -240,8 +249,6 @@ app.post('/api/questions/import', async (req, res) => {
   const parsed = Array.isArray(req.body.questions)
     ? { questions: req.body.questions, invalid: [], totalBlocks: req.body.questions.length }
     : parseQuizText(req.body.text);
-  const insertQuestion = db.prepare('INSERT INTO questions (prompt, source_text, answer_index, answer_status, answer_source, ai_suggestion_index, ai_suggestion_reason, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const insertOption = db.prepare('INSERT INTO options (question_id, option_index, text) VALUES (?, ?, ?)');
   const imported = [];
   const validated = [];
   for (const question of parsed.questions) {
@@ -263,10 +270,11 @@ app.post('/api/questions/import', async (req, res) => {
   }
   if (!validated.length) return res.status(400).json({ error: 'Không có câu hợp lệ để lưu.' });
   await db.transaction(async () => {
-    for (const question of validated) {
-      const result = (await insertQuestion.run(question.prompt, question.sourceText, question.answerIndex, question.answerStatus, question.answerSource, question.suggestionIndex, question.suggestionReason, ownerId()));
-      (await Promise.all(question.options.map(async (text, optionIndex) => (await insertOption.run(result.lastInsertRowid, optionIndex, text)))));
-      imported.push((await getQuestion(result.lastInsertRowid)));
+    for (let offset=0;offset<validated.length;offset+=500) {
+      const chunk=validated.slice(offset,offset+500);
+      const ids=(await db.prepare('INSERT INTO questions (prompt,source_text,answer_index,answer_status,answer_source,ai_suggestion_index,ai_suggestion_reason,owner_id) VALUES '+chunk.map(()=>'(?,?,?,?,?,?,?,?)').join(',')+' RETURNING id').all(...chunk.flatMap(question=>[question.prompt,question.sourceText,question.answerIndex,question.answerStatus,question.answerSource,question.suggestionIndex,question.suggestionReason,ownerId()]))).map(row=>row.id).sort((a,b)=>a-b);
+      await db.prepare('INSERT INTO options (question_id,option_index,text) VALUES '+chunk.flatMap(()=>Array(4).fill('(?,?,?)')).join(',')).run(...chunk.flatMap((question,index)=>question.options.flatMap((text,optionIndex)=>[ids[index],optionIndex,text])));
+      chunk.forEach((question,index)=>imported.push(mapQuestion({id:ids[index],prompt:question.prompt,source_text:question.sourceText,set_id:null,answer_index:question.answerIndex,answer_status:question.answerStatus,answer_source:question.answerSource,ai_suggestion_index:question.suggestionIndex,ai_suggestion_reason:question.suggestionReason},question.options)));
     }
   });
   res.status(201).json({ ...parsed, imported });
@@ -275,8 +283,7 @@ app.post('/api/questions/import', async (req, res) => {
 app.use('/api/question-sets', require('./question-sets'));
 
 app.get('/api/questions', async (_req, res) => {
-  const rows = (await db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId()));
-  res.json((await Promise.all(rows.map(async (row) => (await getQuestion(row.id))))));
+  res.json(await getQuestions());
 });
 
 app.get('/api/questions/:id', async (req, res, next) => {
@@ -353,7 +360,7 @@ app.delete('/api/questions/:id', async (req, res) => {
 });
 
 app.get('/api/questions/export', async (_req, res) => {
-  const questions = (await Promise.all((await db.prepare('SELECT * FROM questions WHERE owner_id = ? ORDER BY id').all(ownerId())).map(async (row) => (await getQuestion(row.id)))));
+  const questions = await getQuestions();
   const text = questions.map((question, index) => {
     const options = question.options.map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`).join('\n');
     const answer = question.answerIndex === null ? 'CHƯA XÁC NHẬN' : String.fromCharCode(65 + question.answerIndex);
@@ -414,7 +421,7 @@ app.patch('/api/attempts/:id/answer', async (req, res) => {
   answers[questionId] = selectedIndex;
   const currentIndex = Math.max(0, Math.min(questionOrder.length - 1, Number(req.body.currentIndex) || 0));
   (await db.prepare('UPDATE attempts SET answers = ?, current_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(JSON.stringify(answers), currentIndex, attempt.id));
-  res.json((await getAttempt(attempt.id, true)));
+  res.json(await getAttempt(attempt.id,true,req.body.compact === true ? [...new Set([questionId,questionOrder[currentIndex]])] : null));
 });
 
 app.post('/api/attempts/:id/submit', async (req, res) => {
@@ -424,16 +431,19 @@ app.post('/api/attempts/:id/submit', async (req, res) => {
   const questionOrder = json(attempt.question_order, []);
   let score = 0;
   const wrong = [];
-  (await Promise.all(questionOrder.map(async (questionId) => {
-    const question = (await getQuestion(questionId));
+  const storedQuestions=new Map((await getQuestions(questionOrder)).map(question=>[question.id,question]));
+  questionOrder.forEach(questionId => {
+    const question = storedQuestions.get(questionId);
     if (!question || question.answerStatus !== 'confirmed' || !validAnswer(question.answerIndex)) return;
     if (answers[questionId] !== undefined && answers[questionId] === question.answerIndex) score += 1;
     else wrong.push({ questionId, selectedIndex: answers[questionId] ?? null });
-  })));
+  });
   await db.transaction(async () => {
   (await db.prepare("UPDATE attempts SET status = 'completed', score = ?, updated_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(score, attempt.id));
-  const addWrong = db.prepare('INSERT OR REPLACE INTO wrong_answers (attempt_id, question_id, selected_index) VALUES (?, ?, ?)');
-  (await Promise.all(wrong.map(async (item) => (await addWrong.run(attempt.id, item.questionId, item.selectedIndex)))));
+  for (let offset=0;offset<wrong.length;offset+=1000) {
+    const chunk=wrong.slice(offset,offset+1000);
+    await db.prepare('INSERT OR REPLACE INTO wrong_answers (attempt_id,question_id,selected_index) VALUES '+chunk.map(()=>'(?,?,?)').join(',')).run(...chunk.flatMap(item=>[attempt.id,item.questionId,item.selectedIndex]));
+  }
   });
   res.json({ ...(await getAttempt(attempt.id, true)), score, wrongCount: wrong.length });
 });
@@ -451,8 +461,8 @@ app.post('/api/attempts/:id/retry-wrong', async (req, res) => {
 });
 
 app.get('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res) => {
-  const attempt = (await getAttempt(req.params.attemptId));
-  if (!attempt || !attempt.questions.some(question => question.id === Number(req.params.questionId))) return res.status(404).json({ error: 'Không tìm thấy ngữ cảnh câu hỏi.' });
+  const attempt = await db.prepare('SELECT question_order FROM attempts WHERE id=? AND owner_id=?').get(Number(req.params.attemptId),ownerId());
+  if (!attempt || !json(attempt.question_order,[]).includes(Number(req.params.questionId)) || !(await getQuestion(req.params.questionId))) return res.status(404).json({ error: 'Không tìm thấy ngữ cảnh câu hỏi.' });
   const messages = (await db.prepare('SELECT role, content, created_at AS createdAt FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(Number(req.params.attemptId), Number(req.params.questionId)));
   res.json(messages);
 });
@@ -484,6 +494,7 @@ app.post('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res)
 
 app.use((req, res) => res.redirect('/'));
 app.use((error, _req, res, _next) => {
+  if (error.type === 'entity.too.large' || error.code === 'LIMIT_FILE_SIZE') return res.status(413).json({error:'Dữ liệu vượt dung lượng 10 MB cho một lần nhập. Hãy chia tài liệu thành các phần nhỏ hơn.'});
   console.error('Request failed.', /^[A-Z0-9]{5}$/.test(error.code || '') ? error.code : '');
   res.status(500).json({error:'Không thể xử lý yêu cầu. Vui lòng thử lại.'});
 });

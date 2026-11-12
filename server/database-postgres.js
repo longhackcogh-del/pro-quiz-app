@@ -24,7 +24,7 @@ function sqlForPostgres(sql) {
   sql = sql.replace(/\?/g, () => '$' + (++index));
   sql = sql.replace('INSERT OR REPLACE INTO wrong_answers', 'INSERT INTO wrong_answers');
   if (/^INSERT INTO wrong_answers/i.test(sql)) sql += ' ON CONFLICT (attempt_id,question_id) DO UPDATE SET selected_index=excluded.selected_index, created_at=CURRENT_TIMESTAMP';
-  if (/^INSERT INTO (questions|options|attempts|wrong_answers|chat_messages|question_sets)\b/i.test(sql)) sql += ' RETURNING id';
+  if (/^INSERT INTO (questions|options|attempts|wrong_answers|chat_messages|question_sets)\b/i.test(sql) && !/\bRETURNING\b/i.test(sql)) sql += ' RETURNING id';
   return sql.replace(/AS createdAt\b/g, 'AS "createdAt"').replace(/AS questionCount\b/g, 'AS "questionCount"');
 }
 function normalize(row) {

@@ -69,4 +69,16 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  try {assert.equal((await client.query('SELECT prompt FROM questions WHERE id=$1',[q.id])).rows[0].prompt,q.prompt);}finally{await client.end();}
  assert.equal((await request(a,'/api/question-sets/'+set.id,{},'DELETE')).status,200);
  assert.equal((await request(a,'/api/questions/'+q.id)).data.setId,null);
+ const large=Array.from({length:501},(_,i)=>({prompt:'Batch PG '+i,options:['A '+i,'B '+i,'C '+i,'D '+i],answerIndex:2,confirmed:true}));
+ const bulkStart=performance.now();
+ const bulk=await request(a,'/api/questions/import',{questions:large});
+ t.diagnostic(JSON.stringify({postgresQuestions:large.length,bulkImportMs:Math.round(performance.now()-bulkStart)}));
+ assert.equal(bulk.status,201);assert.equal(bulk.data.imported.length,501);
+ const all=(await request(a,'/api/questions')).data;
+ for(const index of [0,499,500]) {const question=all.find(row=>row.id===bulk.data.imported[index].id);assert.equal(question.prompt,large[index].prompt);assert.deepEqual(question.options,large[index].options);}
+ const largeAttempt=(await request(a,'/api/attempts',{questionIds:bulk.data.imported.map(question=>question.id)})).data;
+ assert.equal(largeAttempt.total,501);
+ const delta=(await request(a,'/api/attempts/'+largeAttempt.id+'/answer',{questionId:largeAttempt.questions[0].id,selectedIndex:0,currentIndex:1,compact:true},'PATCH')).data;
+ assert.equal(delta.partial,true);assert.equal(delta.questions.length,2);assert.equal(delta.total,501);
+
 });

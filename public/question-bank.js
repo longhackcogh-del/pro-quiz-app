@@ -5,13 +5,19 @@ const bankAnswerDrafts = new Map();
 let editingQuestionId = null;
 let editTrigger;
 let bankMutationBusy = false;
+const bankSearchText = new WeakMap();
 
 function filteredBankQuestions() {
   const term = $('#bank-search').value.trim().toLocaleLowerCase('vi');
   const status = $('#bank-filter').value;
   const ascending = ['oldest','idAsc'].includes($('#bankSort').value);
   const set = $('#question-set-filter').value;
-  return state.questions.filter(question => (set === 'all' || (set === 'none' ? question.setId == null : question.setId === Number(set))) && [question.id,question.prompt,...question.options].join(' ').toLocaleLowerCase('vi').includes(term) && (status === 'all' || question.answerStatus === status)).sort((a,b) => ascending ? a.id-b.id : b.id-a.id);
+  return state.questions.filter(question => {
+    if (!(set === 'all' || (set === 'none' ? question.setId == null : question.setId === Number(set))) || !(status === 'all' || question.answerStatus === status)) return false;
+    if (!term) return true;
+    if (!bankSearchText.has(question)) bankSearchText.set(question,[question.id,question.prompt,...question.options].join(' ').toLocaleLowerCase('vi'));
+    return bankSearchText.get(question).includes(term);
+  }).sort((a,b) => ascending ? a.id-b.id : b.id-a.id);
 }
 function bankPageData() {
   const list = filteredBankQuestions();

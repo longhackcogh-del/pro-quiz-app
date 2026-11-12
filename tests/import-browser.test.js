@@ -405,5 +405,13 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,chapterBefore);
   await evaluate('saveImportPreview()');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,chapterBefore+1);
+  await evaluate("renderImportPreview({questions:Array.from({length:5000},(_,i)=>({id:'large-'+i,prompt:'Preview '+i,options:['A','B','C','D'],answerIndex:2,answerStatus:'confirmed'}))})");
+  assert.equal(await evaluate("document.querySelectorAll('#import-preview .preview-question').length"),25);
+  await evaluate("document.querySelector('[data-prompt]').value='Edited first';document.querySelector('[data-prompt]').dispatchEvent(new Event('input'));changeImportPreviewPage(2)");
+  assert.equal(await evaluate('state.pending[0].prompt'),'Edited first');
+  assert.equal(await evaluate('state.pending[0].confirmed'),false);
+  await evaluate("document.querySelector('[data-answer]').value='1';document.querySelector('[data-answer]').dispatchEvent(new Event('change'));changeImportPreviewPage(3);changeImportPreviewPage(2)");
+  assert.equal(await evaluate("document.querySelector('[data-answer]').value"),'1');
+  assert.equal(await evaluate('collectPreview().length'),5000);
   assert.deepEqual(exceptions, []);
 });

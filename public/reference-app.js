@@ -24,6 +24,12 @@ async function api(url, options = {}) {
   }
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error || `Lỗi máy chủ (${response.status}).`);
+  if (data?.partial && url.includes('/answer')) {
+    const previous=state.attempt;
+    if (!previous || previous.id!==data.id || previous.total!==data.total || data.questions.some(question=>!previous.questions.some(old=>old.id===question.id))) return api('/api/attempts/'+data.id);
+    const updates=new Map(data.questions.map(question=>[question.id,question]));
+    return {...data,partial:false,questions:previous.questions.map(question=>updates.get(question.id)||question)};
+  }
   return data;
 }
 function post(body) { return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
@@ -32,12 +38,13 @@ function setView(view) {
   document.querySelectorAll('.view-content').forEach((item) => item.classList.toggle('active', item.id === view));
   state.view = view;
 }
-async function refreshHeader() {
+async function refreshHeader(loadStats = true) {
   const status = await api('/api/ai/status');
   state.teacherEnabled = status.teacherEnabled === true;
   $('#ai-status-label').textContent = status.configured ? (status.connectionVerified ? `${status.provider} đã phản hồi (${status.model})` : `${status.provider} đã cấu hình (${status.model}) — chưa kiểm chứng kết nối`) : 'AI chưa cấu hình: cần khóa API trong .env';
   $('#ai-status-label').style.color = status.configured ? 'var(--color-success)' : 'var(--color-warning)';
   if (!state.accountId) { $('#badge-question-count').textContent = 'Chưa đăng nhập'; return; }
+  if (!loadStats) return;
   const stats = await api('/api/stats');
   $('#badge-question-count').textContent = `${stats.total} câu hỏi`;
 }
@@ -52,17 +59,37 @@ function suggestionMarkup(question) {
   if (!question.aiSuggestionReason && question.aiSuggestionIndex == null) return '<p class="preview-status">Chưa có đáp án — cần xem lại hoặc nhờ AI phân tích.</p>';
   return `<div class="ai-suggestion"><strong>AI đề xuất — chưa xác nhận</strong><p>${question.aiSuggestionIndex == null ? 'Cần xem lại: chưa đủ dữ kiện hoặc kết quả AI chưa hợp lệ.' : `Đáp án đề xuất: ${letter(question.aiSuggestionIndex)}`}</p><p>${escapeHtml(question.aiSuggestionReason)}</p></div>`;
 }
-function renderImportPreview(data) {
+let importPreviewPage = 1;
+let importPreviewMessage = null;
+function changeImportPreviewPage(page) {
+  try {
+    const questions=collectPreview();
+    renderImportPreview({questions,invalid:state.importInvalid,aiMessage:importPreviewMessage},page);
+    $('#import-preview').scrollIntoView({block:'start'});
+  } catch (error) { showError(error); }
+}
+function renderImportPreview(data, page = 1) {
   state.pending = data.questions || [];
+  const pages=Math.max(1,Math.ceil(state.pending.length/25));
+  importPreviewPage=Math.min(Math.max(1,page),pages);
+  importPreviewMessage=data.aiMessage;
+  const start=(importPreviewPage-1)*25;
   state.importInvalid = data.invalid || [];
   const preview = $('#import-preview');
   preview.hidden = false;
-  preview.innerHTML = `<h4>${state.pending.length} câu có thể nhập</h4><p id="import-message" role="status">${escapeHtml(data.aiMessage || 'Chọn đáp án và tích xác nhận từng câu. Câu chưa xác nhận vẫn có thể lưu nhưng không được chấm điểm.')}</p>${state.pending.map((question, index) => {
-    const selected = question.answerIndex ?? question.aiSuggestionIndex;
+  preview.innerHTML = `<h4>${state.pending.length} câu có thể nhập</h4><p id="import-message" role="status">${escapeHtml(data.aiMessage || 'Chọn đáp án và tích xác nhận từng câu. Câu chưa xác nhận vẫn có thể lưu nhưng không được chấm điểm.')}</p>${state.pending.slice(start,start+25).map((question, pageIndex) => {
+    const index=start+pageIndex;
+    const selected = question.answerIndex ?? question.draftAnswerIndex ?? question.aiSuggestionIndex;
     const confirmed = question.confirmed === true || question.answerStatus === 'confirmed';
     return `<div class="preview-question" data-preview-index="${index}" data-draft-id="${escapeHtml(question.id)}"><h4>Câu ${index + 1}</h4><label>Nội dung câu hỏi<textarea data-prompt rows="2">${escapeHtml(question.prompt)}</textarea></label><div class="preview-options">${question.options.map((option, optionIndex) => `<label>${letter(optionIndex)}<input data-option="${optionIndex}" value="${escapeHtml(option)}"></label>`).join('')}</div><div data-suggestion>${suggestionMarkup(question)}</div><label>Đáp án để xác nhận<select data-answer><option value="">Chưa chọn đáp án</option>${question.options.map((_, optionIndex) => `<option value="${optionIndex}" ${selected === optionIndex ? 'selected' : ''}>${letter(optionIndex)}</option>`).join('')}</select></label><label class="confirm-answer"><input type="checkbox" data-confirm ${confirmed ? 'checked' : ''}> Tôi đã kiểm tra và xác nhận đáp án này</label><p data-confirm-status class="preview-status">${confirmed ? 'Đã xác nhận' : 'Chưa xác nhận — không dùng để chấm điểm'}</p><details><summary>Nội dung đề gốc</summary><pre>${escapeHtml(question.sourceText || question.prompt)}</pre></details></div>`;
   }).join('')}${state.importInvalid.length ? `<p class="preview-error">Không đọc được ${state.importInvalid.length} khối: ${escapeHtml(state.importInvalid.map((item) => `Khối ${item.importIndex}: ${item.error}`).join('; '))}</p>` : ''}<div class="preview-actions"><button class="btn" onclick="cancelImportPreview()">Hủy</button><button class="btn" onclick="analyzePreviewAnswers().catch(showError)">AI đề xuất đáp án</button><button class="btn btn-primary" onclick="saveImportPreview().catch(showError)">Lưu vào kho c? nh?n</button><button class="btn btn-success" onclick="saveImportPreview(true).catch(showError)">Lưu và bắt đầu làm bài</button></div>`;
-  preview.querySelectorAll('.preview-question').forEach((row, index) => {
+  if (pages > 1) {
+    const pagination=`<div class="preview-pagination"><button class="btn" ${importPreviewPage===1?'disabled':''} onclick="changeImportPreviewPage(${importPreviewPage-1})">Trang trước</button><span>Trang ${importPreviewPage}/${pages} · 25 câu/trang</span><button class="btn" ${importPreviewPage===pages?'disabled':''} onclick="changeImportPreviewPage(${importPreviewPage+1})">Trang sau</button></div>`;
+    preview.querySelector('h4').insertAdjacentHTML('afterend',pagination);
+    preview.insertAdjacentHTML('beforeend',pagination);
+  }
+  preview.querySelectorAll('.preview-question').forEach(row => {
+    const index=Number(row.dataset.previewIndex);
     const confirmation = row.querySelector('[data-confirm]');
     const updateStatus = () => {
       if (confirmation.checked && row.querySelector('[data-answer]').value === '') confirmation.checked = false;
@@ -80,14 +107,16 @@ function renderImportPreview(data) {
   });
 }
 function collectPreview() {
-  return state.pending.map((_question, index) => {
-    const row = $(`[data-preview-index="${index}"]`);
+  const edits=new Map();
+  document.querySelectorAll('#import-preview [data-preview-index]').forEach(row => {
+    const index=Number(row.dataset.previewIndex);
     const answer = row.querySelector('[data-answer]').value;
     const confirmed = row.querySelector('[data-confirm]').checked && answer !== '';
     const prompt = row.querySelector('[data-prompt]').value.trim();
     const options = [...row.querySelectorAll('[data-option]')].map((input) => input.value.trim());
     if (!prompt || options.some((option) => !option)) throw new Error(`Câu ${index + 1} cần nội dung và đủ bốn lựa chọn. Bản xem trước được giữ lại.`);
-    return {
+    edits.set(index, {
+      draftAnswerIndex: answer === '' ? null : Number(answer),
       id: state.pending[index].id,
       prompt,
       options,
@@ -98,8 +127,9 @@ function collectPreview() {
       aiSuggestionIndex: state.pending[index].aiSuggestionIndex ?? null,
       aiSuggestionReason: state.pending[index].aiSuggestionReason || null,
       sourceText: state.pending[index].sourceText
-    };
+    });
   });
+  return state.pending.map((question,index)=>edits.get(index)||{...question,confirmed:question.confirmed===true||question.answerStatus==='confirmed'});
 }
 async function saveImportPreview(start = false) {
   if (state.importBusy) return;
@@ -108,6 +138,7 @@ async function saveImportPreview(start = false) {
   const confirmedCount = questions.filter((question) => question.confirmed).length;
   if (start && !confirmedCount) throw new Error('Cần xác nhận ít nhất một đáp án trước khi lưu và bắt đầu làm bài.');
   setImportBusy(true);
+  $('#import-message').textContent = `Đang lưu ${questions.length} câu hỏi… Bạn có thể chờ tại đây.`;
   try {
     const result = await api('/api/questions/import', post({ questions }));
     state.pending = [];
@@ -121,6 +152,9 @@ async function saveImportPreview(start = false) {
       state.attempt = await api('/api/attempts', post({}));
       await showQuiz();
     }
+  } catch (error) {
+    if (state.pending.length && $('#import-message')) $('#import-message').textContent = 'Chưa lưu thành công. Bản xem trước vẫn được giữ lại để thử lại.';
+    throw error;
   } finally { setImportBusy(false); }
 }
 function cancelImportPreview() { if (state.importBusy) return; state.pending = []; state.importText = null; $('#import-preview').hidden = true; }
@@ -196,12 +230,14 @@ async function processLocalFileParsing(event) {
 }
 function backToMenu() { setView('v-menu'); refreshHeader().catch(showError); }
 async function openViewQuestions() {
+  setView('v-list');
+  $('#bankRange').textContent = 'Đang tải kho câu hỏi…';
   try {
     const [questions] = await Promise.all([api('/api/questions'),loadQuestionSets()]);
     state.questions = questions;
     renderBank();
     setView('v-list');
-  } catch (error) { showError(error); }
+  } catch (error) { renderBank(); showError(error); }
 }
 async function suggestStoredQuestion(id, button) {
   button.disabled = true;
@@ -306,7 +342,7 @@ async function chooseAnswer(index) {
   const question = currentQuestion();
   const attemptId = state.attempt.id;
   try {
-    const savedAttempt = await api(`/api/attempts/${attemptId}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: question.id, selectedIndex: index, currentIndex: state.attempt.currentIndex }) });
+    const savedAttempt = await api(`/api/attempts/${attemptId}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ compact: true, questionId: question.id, selectedIndex: index, currentIndex: state.attempt.currentIndex }) });
     if (state.attempt?.id !== attemptId) return;
     state.attempt = savedAttempt;
     const updated = currentQuestion();
@@ -318,7 +354,7 @@ async function chooseAnswer(index) {
       try {
         if (!state.attempt || state.attempt.id !== attemptId || state.view !== 'v-quiz') return;
         if (state.attempt.currentIndex + 1 < state.attempt.total) {
-          state.attempt = await api(`/api/attempts/${state.attempt.id}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: updated.id, selectedIndex: index, currentIndex: state.attempt.currentIndex + 1 }) });
+          state.attempt = await api(`/api/attempts/${state.attempt.id}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ compact: true, questionId: updated.id, selectedIndex: index, currentIndex: state.attempt.currentIndex + 1 }) });
           renderActiveQuestion();
           await loadChatForCurrentQuestion();
         } else await finishQuiz();
@@ -331,7 +367,7 @@ async function handleQuizPrev() {
   if (!state.attempt || state.attempt.currentIndex <= 0) return;
   const question = currentQuestion();
   try {
-    state.attempt = await api(`/api/attempts/${state.attempt.id}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ questionId: question.id, selectedIndex: question.selectedIndex, currentIndex: state.attempt.currentIndex - 1 }) });
+    state.attempt = await api(`/api/attempts/${state.attempt.id}/answer`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ compact: true, questionId: question.id, selectedIndex: question.selectedIndex, currentIndex: state.attempt.currentIndex - 1 }) });
     renderActiveQuestion(); await loadChatForCurrentQuestion();
   } catch (error) { showError(error); }
 }

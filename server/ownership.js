@@ -1,6 +1,7 @@
 const { AsyncLocalStorage } = require('node:async_hooks');
 const db = require('./database');
 const scope = new AsyncLocalStorage();
+const registeredUsers = new Map();
 function ownerId() {
   const id = scope.getStore();
   if (!id) throw new Error('Authenticated account scope is required');
@@ -13,6 +14,8 @@ async function requireAccount(req, res, next) {
   const user = req.user;
   if (req.get('X-Quiz-Account') && req.get('X-Quiz-Account') !== user.id) return res.status(409).json({ error: 'Tài khoản đã thay đổi. Hãy tải lại dữ liệu của tài khoản hiện tại.' });
   res.set('X-Quiz-Account', user.id);
+  const fingerprint=user.email+'\0'+user.name;
+  if (registeredUsers.get(user.id) === fingerprint) return scope.run(user.id,next);
   await db.transaction(async () => {
     (await db.prepare('INSERT INTO users (id, email, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET email=excluded.email, name=excluded.name').run(user.id, user.email, user.name));
     const legacyEmail = process.env.LEGACY_OWNER_EMAIL?.trim().toLowerCase();
@@ -22,6 +25,8 @@ async function requireAccount(req, res, next) {
       (await db.prepare("INSERT INTO app_meta (key,value) VALUES ('legacy_owner_id',?)").run(user.id));
     }
   });
+  if (registeredUsers.size >= 1000) registeredUsers.delete(registeredUsers.keys().next().value);
+  registeredUsers.set(user.id,fingerprint);
   scope.run(user.id, next);
 }
 module.exports = { ownerId, requireAccount };

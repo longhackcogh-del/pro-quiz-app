@@ -1,0 +1,27 @@
+﻿const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+test('Large bank: 5000 questions use bounded queries and compact answer responses',{timeout:60000},async t=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'quiz-large-'));process.env.DATABASE_FILE=path.join(directory,'test.sqlite');
+ const {loadAuthenticatedApp,authenticatedFetch}=require('./auth-client');const app=loadAuthenticatedApp(),db=require('../server/database');
+ const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.on('listening',resolve));const base='http://127.0.0.1:'+server.address().port;
+ const prepare=db.prepare.bind(db);let queries=0;
+ db.prepare=sql=>{const stmt=prepare(sql);return Object.fromEntries(['all','get','run'].map(method=>[method,async(...args)=>{queries++;await new Promise(resolve=>setTimeout(resolve,1));return stmt[method](...args);} ]));};
+ t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();fs.rmSync(directory,{recursive:true,force:true});});
+ const fetch=await authenticatedFetch(base);
+ const request=async(route,body,method='POST')=>{const r=await fetch(base+route,body!==undefined?{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const data=await r.json();assert.ok(r.ok,JSON.stringify({route,status:r.status,data}));return data;};
+ await request('/api/stats');queries=0;
+ const count=5000;const questions=Array.from({length:count},(_,i)=>({prompt:'Large question '+i,options:['A '+i,'B '+i,'C '+i,'D '+i],answerIndex:2,confirmed:true}));
+ let start=performance.now();const imported=await request('/api/questions/import',{questions});const importQueries=queries;
+ assert.equal(imported.imported.length,count);assert.ok(queries<=Math.ceil(count/500)*2+2,'Import should use two statements per batch');
+ assert.equal(imported.imported[1234].prompt,questions[1234].prompt);assert.deepEqual(imported.imported[1234].options,questions[1234].options);
+ const importMs=Math.round(performance.now()-start);queries=0;start=performance.now();
+ const bank=await request('/api/questions');assert.equal(bank.length,count);assert.equal(queries,1);const listMs=Math.round(performance.now()-start);
+ queries=0;const attempt=await request('/api/attempts',{});assert.equal(attempt.total,count);assert.ok(queries<8);assert.ok(attempt.questions.every(q=>!Object.hasOwn(q,'answerIndex')));
+ queries=0;start=performance.now();await request('/api/dashboard');const dashboardQueries=queries;assert.ok(queries<=6,'Unanswered questions must not generate individual queries');const dashboardMs=Math.round(performance.now()-start);
+ queries=0;const compact=await request('/api/attempts/'+attempt.id+'/answer',{questionId:attempt.questions[0].id,selectedIndex:0,currentIndex:1,compact:true},'PATCH');
+ assert.equal(compact.partial,true);assert.equal(compact.total,count);assert.equal(compact.questions.length,2);assert.ok(queries<=4);assert.ok(JSON.stringify(compact).length<2000);
+ assert.equal(compact.questions.find(q=>q.id===attempt.questions[0].id).answerIndex,2);assert.ok(!Object.hasOwn(compact.questions.find(q=>q.id===attempt.questions[1].id),'answerIndex'));
+ queries=0;const history=await request('/api/wrong-answers');assert.equal(history.length,1);assert.ok(queries<=3);
+ queries=0;const result=await request('/api/attempts/'+attempt.id+'/submit',{});assert.equal(result.wrongCount,count);assert.ok(queries<20,'Grading must batch question reads and wrong-answer writes');
+ const other=await authenticatedFetch(base,'other-large-user','other@example.com');assert.deepEqual(await other(base+'/api/questions').then(r=>r.json()),[]);
+ t.diagnostic(JSON.stringify({questions:count,importQueries,listQueries:1,dashboardQueries,importMs,listMs,dashboardMs,compactBytes:JSON.stringify(compact).length}));
+});

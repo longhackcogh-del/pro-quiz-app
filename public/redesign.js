@@ -77,12 +77,13 @@ function syncTeacherAvailability() {
 }
 const originalRefreshHeader = refreshHeader;
 refreshHeader = async function() {
-  await originalRefreshHeader();
+  const [,dashboard] = await Promise.all([originalRefreshHeader(false),state.accountId ? api('/api/dashboard') : Promise.resolve(null)]);
   syncTeacherAvailability();
   $('#dashboard-ai-status').textContent = $('#ai-status-label').textContent;
   $('#ai-verified-badge').textContent = $('#ai-status-label').textContent.includes(' đã phản hồi (') ? 'Đã phản hồi' : 'Chưa xác minh';
   if (!state.accountId) return;
-  const dashboard = await api('/api/dashboard');
+  if (!dashboard) return;
+  $('#badge-question-count').textContent = `${dashboard.total} câu hỏi`;
   $('#statTotal').textContent = dashboard.total;
   $('#statConfirmed').textContent = dashboard.confirmed;
   $('#statSessions').textContent = dashboard.completedAttempts;
