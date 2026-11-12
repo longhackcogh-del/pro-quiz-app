@@ -65,11 +65,14 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
     const target = path.resolve(directory);
     if (path.dirname(target) === path.resolve(os.tmpdir()) && path.basename(target).startsWith('pro-quiz-browser-')) fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
-  browser = spawn(browserPath, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${path.join(directory, 'profile')}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  // Only the temporary headless browser in Linux CI needs these runner flags.
+  const ciFlags=process.env.CI && process.platform==='linux' ? ['--no-sandbox','--disable-dev-shm-usage'] : [];
+  browser = spawn(browserPath, ['--headless=new', ...ciFlags, '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${path.join(directory, 'profile')}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   const endpoint = await new Promise((resolve, reject) => {
     let buffer = '';
-    const timer = setTimeout(() => reject(new Error('Browser DevTools did not start.')), 15000);
+    const timer = setTimeout(() => reject(new Error('Browser DevTools did not start: '+buffer.slice(-2000))), 15000);
     browser.once('error', (error) => { clearTimeout(timer); reject(error); });
+    browser.once('exit', code => { clearTimeout(timer); reject(new Error('Test browser exited '+code+': '+buffer.slice(-2000))); });
     browser.stderr.on('data', (chunk) => {
       buffer += chunk.toString();
       const match = buffer.match(/DevTools listening on (ws:\/\/[^\s]+)/);
