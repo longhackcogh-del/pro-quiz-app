@@ -338,6 +338,10 @@ function resetPracticeInteraction() {
 }
 async function showQuiz() {
   resetPracticeInteraction();
+  await loadQuestionSets();
+  const sets=new Set(state.attempt.questions.map(q=>q.setId??null));
+  const selectedSet=sets.size===1 ? [...sets][0] : undefined;
+  $('#practice-set-select').value=sets.size>1?'all':selectedSet==null?'none':String(selectedSet);
   state.savedCursor={id:state.attempt.id,index:state.attempt.currentIndex};
   setView('v-quiz');renderActiveQuestion();await loadChatForCurrentQuestion();
 }

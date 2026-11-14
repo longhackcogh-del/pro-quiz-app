@@ -28,8 +28,21 @@ function quickChat(message) {
 }
 function filterQuestionBank() { bankPage = 1; renderBank(); }
 async function createNewPractice() {
-  if (state.busy || !window.confirm('Tạo lượt luyện tập mới từ toàn bộ câu đã xác nhận?')) return;
-  try { state.attempt = await api('/api/attempts', post({})); await showQuiz(); } catch (error) { showError(error); }
+  if (state.busy || state.practiceLoading) return;
+  const selected=$('#practice-set-select');
+  const set=selected.value,name=selected.selectedOptions[0].textContent;
+  if (!window.confirm(`Bắt đầu lượt mới: ${name}? Tiến trình lượt hiện tại vẫn được lưu.`)) return;
+  state.practiceLoading=true;
+  try {
+    let payload={};
+    if(set!=='all') {
+      const questions=await api('/api/questions');
+      const questionIds=questions.filter(q=>(set==='none'?q.setId==null:q.setId===Number(set))&&q.answerStatus==='confirmed').map(q=>q.id);
+      if(!questionIds.length)return toast('Bộ này chưa có câu hỏi đã xác nhận đáp án.');
+      payload={questionIds};
+    }
+    state.attempt=await api('/api/attempts',post(payload));await showQuiz();
+  } catch(error) {showError(error);} finally {state.practiceLoading=false;}
 }
 async function practiceAllWrong() {
   try {
@@ -103,6 +116,10 @@ renderActiveQuestion = function(message = '') {
   $('#practiceBar').style.width = `${(state.attempt.currentIndex + 1) * 100 / state.attempt.total}%`;
   $('#practiceNumber').textContent = `QUESTION ${String(state.attempt.currentIndex + 1).padStart(2,'0')}`;
   const question = currentQuestion();
+  const setIds=new Set(state.attempt.questions.map(q=>q.setId??null));
+  const setId=setIds.size===1 ? [...setIds][0] : undefined;
+  const set=questionSets.find(item=>item.id===setId);
+  $('#practiceSubject').textContent=setIds.size>1?'Nhiều bộ câu hỏi':set?.name || 'Chưa phân loại';
   if (state.answerPending?.attemptId===state.attempt.id && state.answerPending?.questionId===question.id) { $('#practiceFeedback').textContent='Đang chấm và lưu lựa chọn…'; return; }
   $('#practiceFeedback').textContent = question.selectedIndex == null ? 'Chọn đáp án để ghi nhận kết quả.' : question.selectedIndex === question.answerIndex ? '✓ Chính xác! Tiến trình đã được lưu.' : `Chưa đúng. Đáp án đã xác nhận: ${letter(question.options.findIndex(option=>option.index===question.answerIndex))}.`;
 };

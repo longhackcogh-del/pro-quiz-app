@@ -159,9 +159,9 @@ async function loadQuestionSets() {
   renderQuestionSets();
 }
 function renderQuestionSets() {
-  for (const id of ['question-set-filter','question-set-target']) {
+  for (const id of ['question-set-filter','question-set-target','practice-set-select']) {
     const select=$('#'+id), value=select.value;
-    select.innerHTML=(id==='question-set-filter' ? '<option value="all">Tất cả bộ câu hỏi</option>' : '')+'<option value="none">Chưa phân loại</option>'+questionSets.map(set=>`<option value="${set.id}">${escapeHtml(set.name)} (${set.questionCount})</option>`).join('');
+    select.innerHTML=(id!=='question-set-target' ? '<option value="all">Tất cả bộ câu hỏi</option>' : '')+'<option value="none">Chưa phân loại</option>'+questionSets.map(set=>`<option value="${set.id}">${escapeHtml(set.name)} (${set.questionCount})</option>`).join('');
     if ([...select.options].some(option=>option.value===value)) select.value=value;
   }
 }

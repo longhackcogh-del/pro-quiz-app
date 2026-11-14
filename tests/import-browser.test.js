@@ -203,6 +203,13 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate('filteredBankQuestions().length'),1);
   await evaluate('window.beforeSetPractice=state.attempt; practiceQuestionSet()');
   assert.equal(await evaluate('state.attempt.total'),1);
+  assert.equal(await evaluate("document.querySelector('#practiceSubject').textContent"),'Chapter 1');
+  assert.equal(await evaluate("document.querySelector('#practice-set-select').value"),String(await evaluate('questionSets[0].id')));
+  assert.equal(await evaluate("document.querySelector('#v-quiz .practice-focus')"),null);
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.practice-layout')).gridTemplateColumns.split(' ').length"),1);
+  await evaluate("window.confirm=()=>true; createNewPractice()");
+  assert.equal(await evaluate('state.attempt.total'),1);
+  assert.equal(await evaluate("document.querySelector('#practiceSubject').textContent"),'Chapter 1');
   await evaluate('state.attempt=window.beforeSetPractice; openViewQuestions()');
   await evaluate("window.prompt=()=> 'Renamed chapter'; renameQuestionSet()");
   assert.equal(await evaluate('selectedQuestionSet().name'),'Renamed chapter');

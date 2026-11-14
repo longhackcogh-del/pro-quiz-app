@@ -180,7 +180,7 @@ async function serializeAttempt(attempt,includeAnswer=false,visibleIds=null) {
     if (!question) return null;
     const order = optionOrders[questionId] || [0, 1, 2, 3];
     const revealAnswer = includeAnswer && (attempt.status === 'completed' || validAnswer(answers[questionId]));
-    return { id: question.id, prompt: question.prompt, options: order.map((optionIndex) => ({ index: optionIndex, text: question.options[optionIndex] })), selectedIndex: answers[questionId] ?? null, answerStatus: question.answerStatus, ...(revealAnswer && { answerIndex: question.answerIndex }) };
+    return { id: question.id, setId: question.setId, prompt: question.prompt, options: order.map((optionIndex) => ({ index: optionIndex, text: question.options[optionIndex] })), selectedIndex: answers[questionId] ?? null, answerStatus: question.answerStatus, ...(revealAnswer && { answerIndex: question.answerIndex }) };
   }).filter(Boolean);
   return { ...(visibleIds && {partial:true}), id: attempt.id, status: attempt.status, currentIndex: attempt.current_index, score: attempt.score, total: visibleIds ? questionOrder.length : questions.length, questions, updatedAt: attempt.updated_at };
 }
