@@ -17,3 +17,5 @@ body{min-width:320px}a.btn{display:inline-flex;align-items:center;text-decoratio
 #quiz-options-container .option-item{user-select:text;-webkit-user-select:text}#quiz-options-container .option-item span:last-child{cursor:text}
 
 #v-quiz .practice-layout{grid-template-columns:minmax(0,1fr)}.practice-picker{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.practice-picker label{font-size:13px;color:var(--muted)}.practice-picker select{max-width:300px;min-width:180px}.practice-meta #practiceSubject{overflow-wrap:anywhere;min-width:0}@media(max-width:760px){.practice-picker select{flex:1;max-width:100%}}
+
+.katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0}.option-item>span:last-child{min-width:0;overflow-wrap:anywhere}.formula-preview{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px;line-height:2;overflow-x:auto}.formula-preview>div{margin:5px 0}.katex{font-size:1.1em}

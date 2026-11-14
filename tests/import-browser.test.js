@@ -444,6 +444,27 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate("quickChat('Explain this question')");
   assert.equal(await evaluate('window.manualChatPosts'),1,'Only an explicit question requests AI');
   await evaluate('window.fetch=window.manualChatFetch');
+  const formulaText=String.raw`Câu 1: Đạo hàm \(y=\ln(x^2+1)\):
+A. \(\frac{1}{x^2+1}\)
+B. \(\frac{2x}{x^2+1}\)
+C. \(\sqrt{x}\)
+D. \(\int_0^1 x\,dx\)
+Đáp án đúng: B`;
+  await evaluate(`(async()=>{const data=await api('/api/imports/preview',post({text:${JSON.stringify(formulaText)}}));renderImportPreview(data);})()`);
+  assert.equal(await evaluate("document.querySelectorAll('.formula-preview .katex').length"),5);
+  await evaluate(`(async()=>{const saved=await api('/api/questions/import',post({text:${JSON.stringify(formulaText)}}));state.attempt=await api('/api/attempts',post({questionIds:saved.imported.map(q=>q.id)}));await showQuiz();})()`);
+  assert.equal(await evaluate("document.querySelectorAll('#quiz-options-container .katex').length"),4);
+  assert.equal(await evaluate("document.querySelectorAll('#quiz-question-container .katex').length"),1);
+  await evaluate("appendMessageToChatWindow('ai',String.raw`\\(\\ce{3Fe + 2O2 -> Fe3O4}\\) và \\[\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\\]`)");
+  assert.equal(await evaluate("document.querySelectorAll('#ai-messages-box .chat-bubble:last-child .katex').length"),2);
+  assert.equal(await evaluate("document.querySelectorAll('.katex-error').length"),0);
+  if(process.env.PRO_QUIZ_FORMULA_SCREENSHOT){
+    await evaluate("toggleStudyChat(false);document.fonts.ready");
+    const screenshot=await send('Page.captureScreenshot',{format:'png'},sessionId);
+    fs.writeFileSync(process.env.PRO_QUIZ_FORMULA_SCREENSHOT,Buffer.from(screenshot.data,'base64'));
+  }
+  await evaluate("appendMessageToChatWindow('ai',String.raw`\\(\\href{javascript:alert(1)}{unsafe}\\)`)");
+  assert.equal(await evaluate("document.querySelector('#ai-messages-box a[href^=\"javascript:\"]')"),null);
   await evaluate("renderImportPreview({questions:Array.from({length:5000},(_,i)=>({id:'large-'+i,prompt:'Preview '+i,options:['A','B','C','D'],answerIndex:2,answerStatus:'confirmed'}))})");
   assert.equal(await evaluate("document.querySelectorAll('#import-preview .preview-question').length"),25);
   await evaluate("document.querySelector('[data-prompt]').value='Edited first';document.querySelector('[data-prompt]').dispatchEvent(new Event('input'));changeImportPreviewPage(2)");

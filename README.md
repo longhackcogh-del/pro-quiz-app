@@ -93,3 +93,9 @@ Sau khi triển khai thành công, thêm URL thật vào phần About của GitH
 > Xây dựng ứng dụng luyện thi với Node.js, Express và SQLite; tích hợp Google OAuth, dữ liệu riêng theo tài khoản, nhập tài liệu, quản lý bộ câu hỏi và ôn câu sai. Bổ sung kiểm thử tích hợp và cấu hình CI/deployment.
 
 Chỉ ghi link demo, số người dùng và kết quả chịu tải đã thực sự kiểm chứng. Mã tham chiếu thiết kế/C++ được giữ lại để đối chiếu; kiểm tra quyền sử dụng tài sản trước khi chọn giấy phép phát hành.
+
+## Công thức trong đề thi
+
+Hỗ trợ LaTeX dạng `\(...\)`, `\[...\]`, `$...$`, `$$...$$` bằng KaTeX phục vụ từ chính server. Công thức được lưu dạng văn bản gốc; bản xem trước, kho, luyện tập, ôn câu sai và chat hiển thị công thức. Hóa học hỗ trợ `\ce{...}` (mhchem). Khi sửa đề, giữ dấu bao công thức; không cần gọi AI để hiển thị.
+
+Nhập đề Markdown nhận **Câu 1:**, gạch đầu dòng A–D và **Đáp án đúng: B.**. Hãy nhập lại tài liệu nếu dữ liệu cũ đã lưu dòng đáp án lẫn trong lựa chọn. Chưa có OCR hoặc chuyển Equation/OMML của Word, ảnh công thức hay bố cục PDF sang LaTeX. Với các dạng này, cần chuyển thành LaTeX trong văn bản trước khi nhập; không suy đoán công thức bị mất. LaTeX không hợp lệ hiển thị lỗi để kiểm tra, không làm gián đoạn bài luyện tập.

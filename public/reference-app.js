@@ -90,6 +90,8 @@ function renderImportPreview(data, page = 1) {
     preview.insertAdjacentHTML('beforeend',pagination);
   }
   preview.querySelectorAll('.preview-question').forEach(row => {
+    updateFormulaPreview(row);
+    row.addEventListener('input',()=>updateFormulaPreview(row));
     const index=Number(row.dataset.previewIndex);
     const confirmation = row.querySelector('[data-confirm]');
     const updateStatus = () => {
@@ -305,6 +307,7 @@ async function openWrongLogView() {
       previousAttempt = question.attemptId;
       return `${divider}<article class="question-card data-row"><span class="tag warn">CẦN ÔN</span><p>${escapeHtml(question.prompt)}</p><div class="options">${question.options.map((option, index) => `<div class="option ${index === question.answerIndex ? 'correct' : ''}">${letter(index)}. ${escapeHtml(option)}</div>`).join('')}</div><p class="small muted">Đáp án đúng: ${letter(question.answerIndex)} · Bạn chọn: ${letter(question.selectedIndex)} · ${new Date(question.wrongAt.replace(' ', 'T') + 'Z').toLocaleString('vi-VN')}</p></article>`;
     }).join('') : '<div class="empty">Chưa có câu trả lời sai để ôn. Câu sai sẽ xuất hiện tại đây ngay sau khi bạn chọn đáp án, kể cả khi chưa nộp bài.</div>';
+    renderFormulaContent($('#scroller-wrong-list'));
     setView('v-wrong');
   } catch (error) { showError(error); }
 }
@@ -377,6 +380,7 @@ function renderActiveQuestion(message = '') {
     if(event.detail>0 && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(item))return;
     chooseAnswer(Number(item.dataset.optionIndex));
   }));
+  renderFormulaContent($('#quiz-question-container'));renderFormulaContent($('#quiz-options-container'));
   $('#quiz-prev-btn').style.display = attempt.currentIndex > 0 ? 'inline-flex' : 'none';
   if (message) appendMessageToChatWindow('system', message);
 }
@@ -475,6 +479,7 @@ function appendMessageToChatWindow(sender, content) {
   const bubble = document.createElement('div');
   bubble.className = `chat-bubble ${sender}`;
   bubble.textContent = content;
+  renderFormulaContent(bubble);
   $('#ai-messages-box').appendChild(bubble);
   $('#ai-messages-box').scrollTop = $('#ai-messages-box').scrollHeight;
 }

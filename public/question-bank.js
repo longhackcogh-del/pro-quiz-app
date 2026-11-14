@@ -52,6 +52,7 @@ function renderBank() {
   $('#selectPage').checked = visible.length > 0 && checked === visible.length;
   $('#selectPage').indeterminate = checked > 0 && checked < visible.length;
   $('#selectedCount').textContent = `Đã chọn ${bankSelected.size} câu`;
+  renderFormulaContent($('#bankTableBody'));
   renderPageButtons(pages);
   document.querySelectorAll('#v-list .bulk-actions button').forEach(button => { button.disabled = bankMutationBusy || !bankSelected.size; });
 }

@@ -32,6 +32,7 @@ app.use('/api', (req,res,next) => {
 });
 app.get('/index.html', (_req, res) => res.redirect('/'));
 app.use(express.static(publicDirectory, { index: false }));
+app.use('/vendor/katex',express.static(path.join(path.dirname(require.resolve('katex/package.json')),'dist')));
 app.get('/', (_req, res) => res.sendFile(path.join(publicDirectory, 'reference.html')));
 function pdfChatbotUrl() {
   try {
