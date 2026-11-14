@@ -20,7 +20,7 @@
   <button data-view="v-pdf"><span>▧</span>Trợ lý tài liệu PDF</button>
  </nav>
  <div class="nav-label">HỆ THỐNG</div>
- <nav class="nav"><button data-view="v-settings"><span>⚙</span>Cài đặt & hướng dẫn</button></nav>
+ <nav class="nav"><button data-view="v-feedback"><span>✉</span>Phản hồi cộng đồng</button><button data-view="v-settings"><span>⚙</span>Cài đặt & hướng dẫn</button></nav>
  <div class="side-bottom"><div class="user-mini"><div class="avatar" id="sideAvatar">G</div><div><b id="sideName">Khách học tập</b><div class="small muted" id="sideEmail">Chưa đăng nhập</div></div></div></div>
 </aside>
 <main class="main">
@@ -106,6 +106,11 @@
   <div class="panel" style="max-width:800px;margin:auto;text-align:center;padding:42px"><div class="ai-orb" style="margin:0 auto 18px">▧</div><h2>Đọc tài liệu. Hỏi sâu. Hiểu bản chất.</h2><p class="muted">Mở không gian trợ lý PDF riêng để tải tài liệu, tóm tắt và đặt câu hỏi theo nội dung.</p><a class="btn primary" id="pdf-link" href="/pdf-chatbot" target="_blank" rel="noopener">Mở trợ lý PDF ↗</a><p class="small muted"><span id="pdf-status">Đang kiểm tra địa chỉ trợ lý…</span></p></div>
  </section>
 
+ <section class="view-content page" id="v-feedback">
+  <div class="page-head"><div><h1>Phản hồi cộng đồng</h1><p>Góp ý, báo lỗi và chia sẻ trải nghiệm để PRO QUIZ tốt hơn.</p></div><button class="btn" onclick="openFeedback()">↻ Làm mới</button></div>
+  <div class="panel"><h3>Gửi phản hồi</h3><p class="small muted">Phản hồi cùng tên tài khoản sẽ được công khai cho mọi người. Không đăng mật khẩu, khóa API hoặc thông tin riêng tư.</p><form id="feedback-form" onsubmit="submitFeedback(event)"><label for="feedback-content">Nội dung phản hồi</label><textarea class="textarea" id="feedback-content" maxlength="2000" required rows="4" placeholder="Bạn muốn cải thiện điều gì hoặc đang gặp lỗi nào?"></textarea><button class="btn primary" id="feedback-submit" type="submit">Gửi phản hồi công khai</button><p class="small muted" id="feedback-status" role="status" aria-live="polite"></p></form></div>
+  <div id="feedback-list" class="feedback-list" aria-live="polite"></div><button class="btn" id="feedback-more" hidden onclick="loadMoreFeedback()">Xem phản hồi cũ hơn</button>
+ </section>
  <section class="view-content page" id="v-settings">
   <div class="page-head"><div><h1>Cài đặt & hướng dẫn</h1><p>Quản lý kết nối AI, tài khoản và dữ liệu học tập.</p></div></div>
   <div class="grid content-grid">
@@ -141,5 +146,5 @@ D. Hải Phòng
 <div class="toast" id="app-toast" role="status" aria-live="polite"></div>
 <link rel="stylesheet" href="/vendor/katex/katex.min.css">
 <script src="/vendor/katex/katex.min.js" defer></script><script src="/vendor/katex/contrib/mhchem.min.js" defer></script><script src="/vendor/katex/contrib/auto-render.min.js" defer></script><script src="/math-content.js" defer></script>
-<script src="/reference-app.js" defer></script><script src="/question-bank.js" defer></script><script src="/redesign.js" defer></script><script src="/import-guide.js" defer></script><script src="/textbook-guide.js" defer></script>
+<script src="/reference-app.js" defer></script><script src="/question-bank.js" defer></script><script src="/feedback.js" defer></script><script src="/redesign.js" defer></script><script src="/import-guide.js" defer></script><script src="/textbook-guide.js" defer></script>
 </body></html>

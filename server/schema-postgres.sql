@@ -21,4 +21,9 @@ CREATE TABLE IF NOT EXISTS chat_messages (id SERIAL PRIMARY KEY, attempt_id INTE
 CREATE INDEX IF NOT EXISTS questions_owner ON questions(owner_id,id);
 CREATE INDEX IF NOT EXISTS attempts_owner ON attempts(owner_id,status,updated_at);
 CREATE INDEX IF NOT EXISTS question_sets_owner ON question_sets(owner_id);
+CREATE TABLE IF NOT EXISTS feedback (
+ id SERIAL PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id),
+ author_name TEXT NOT NULL, content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 2000),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 COMMIT;

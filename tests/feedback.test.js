@@ -1,0 +1,18 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+test('Feedback is publicly readable, authenticated and paginated without exposing identity secrets',async t=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'quiz-feedback-'));process.env.DATABASE_FILE=path.join(directory,'test.sqlite');
+ const {loadAuthenticatedApp,authenticatedFetch}=require('./auth-client');const app=loadAuthenticatedApp(),db=require('../server/database');const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.on('listening',resolve));const base='http://127.0.0.1:'+server.address().port;
+ t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();const target=path.resolve(directory);if(path.dirname(target)!==path.resolve(os.tmpdir())||!path.basename(target).startsWith('quiz-feedback-'))throw Error('Unexpected cleanup path');fs.rmSync(target,{recursive:true,force:true});});
+ const user=await authenticatedFetch(base),other=await authenticatedFetch(base,'feedback-other','private@example.com');
+ const body=content=>({method:'POST',headers:{'Content-Type':'application/json',Origin:base},body:JSON.stringify({content,name:'Fake name',email:'exposed@example.com'})});
+ assert.equal((await fetch(base+'/api/feedback',body('anonymous'))).status,401);
+ assert.equal((await user(base+'/api/feedback',body('   '))).status,400);
+ assert.equal((await user(base+'/api/feedback',body('x'.repeat(2001)))).status,400);
+ const malicious='<img src=x onerror=alert(1)> góp ý';const saved=await user(base+'/api/feedback',body(malicious));assert.equal(saved.status,201);const first=await saved.json();assert.notEqual(first.name,'Fake name');assert.equal(first.content,malicious);
+ for(let i=0;i<21;i++)assert.equal((await other(base+'/api/feedback',body('Feedback '+i))).status,201);
+ const publicResponse=await fetch(base+'/api/feedback');assert.equal(publicResponse.status,200);const page=await publicResponse.json();assert.equal(page.items.length,20);assert.ok(page.nextCursor);
+ assert.deepEqual(Object.keys(page.items[0]).sort(),['content','createdAt','id','name']);
+ const next=await(await fetch(base+'/api/feedback?before='+page.nextCursor)).json();assert.equal(next.items.length,2);assert.equal(next.nextCursor,null);assert.equal(next.items.at(-1).id,first.id);
+ assert.equal((await fetch(base+'/api/feedback?before=invalid')).status,400);
+ assert.equal((await user(base+'/api/feedback',{...body('csrf'),headers:{'Content-Type':'application/json',Origin:'https://evil.example'}})).status,403);
+});

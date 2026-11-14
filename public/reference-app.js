@@ -5,7 +5,8 @@ const letter = (index) => index == null ? '—' : String.fromCharCode(65 + Numbe
 let accountEpoch = 0;
 
 async function api(url, options = {}) {
-  const privateRequest = url.startsWith('/api/') && !url.startsWith('/api/auth/') && !['/api/ai/status','/api/integrations/pdf'].includes(url);
+  const publicFeedback=(url==='/api/feedback'||url.startsWith('/api/feedback?'))&&(!options.method||options.method==='GET');
+  const privateRequest = url.startsWith('/api/') && !url.startsWith('/api/auth/') && !['/api/ai/status','/api/integrations/pdf'].includes(url) && !publicFeedback;
   if (privateRequest && !state.accountId) {
     await loadAccount();
     if (!state.accountId) throw new Error('Bạn cần đăng nhập Google để sử dụng kho dữ liệu cá nhân.');

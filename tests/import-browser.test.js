@@ -473,5 +473,12 @@ D. \(\int_0^1 x\,dx\)
   await evaluate("document.querySelector('[data-answer]').value='1';document.querySelector('[data-answer]').dispatchEvent(new Event('change'));changeImportPreviewPage(3);changeImportPreviewPage(2)");
   assert.equal(await evaluate("document.querySelector('[data-answer]').value"),'1');
   assert.equal(await evaluate('collectPreview().length'),5000);
+  await evaluate('openFeedback()');
+  await evaluate("document.querySelector('#feedback-content').value='<img src=x onerror=alert(1)> Góp ý giao diện';submitFeedback({preventDefault(){}})");
+  assert.equal(await evaluate("document.querySelector('#feedback-content').value"),'');
+  assert.equal(await evaluate("document.querySelector('.feedback-card p').textContent"),'<img src=x onerror=alert(1)> Góp ý giao diện');
+  assert.equal(await evaluate("document.querySelector('#feedback-list img')"),null);
+  await evaluate('state.accountId=null;openFeedback()');
+  assert.equal(await evaluate("document.querySelectorAll('.feedback-card').length"),1);
   assert.deepEqual(exceptions, []);
 });

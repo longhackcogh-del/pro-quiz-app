@@ -91,4 +91,11 @@ try {
   db.exec('COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
 
+db.exec(`CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  author_name TEXT NOT NULL,
+  content TEXT NOT NULL CHECK(length(content) BETWEEN 1 AND 2000),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);`);
 module.exports = db;

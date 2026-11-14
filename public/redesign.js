@@ -5,6 +5,7 @@ let accountRequest;
 let accountBusy = false;
 let accountExpiryTimer;
 function navigateTo(view) {
+  if (view === 'v-feedback') return openFeedback();
   if (view === 'v-list') return openViewQuestions();
   if (view === 'v-wrong') return openWrongLogView();
   if (view === 'v-quiz') return startQuizSession();

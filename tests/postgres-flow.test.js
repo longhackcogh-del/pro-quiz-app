@@ -16,6 +16,7 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  t.after(async()=>{
   await new Promise(resolve=>server.close(resolve));
   try { for(const owner of owners){
+   await db.prepare('DELETE FROM feedback WHERE owner_id=?').run(owner);
    await db.prepare('DELETE FROM attempts WHERE owner_id=?').run(owner);
    await db.prepare('DELETE FROM questions WHERE owner_id=?').run(owner);
    await db.prepare('DELETE FROM question_sets WHERE owner_id=?').run(owner);
@@ -30,6 +31,11 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  };
  assert.equal((await fetch(base+'/healthz')).status,200);
  assert.equal((await fetch(base+'/api/questions')).status,401);
+ const communityFeedback=await request(a,'/api/feedback',{content:'PostgreSQL feedback '+owners[0]});
+ assert.equal(communityFeedback.status,201);assert.equal(typeof communityFeedback.data.id,'number');
+ const publicFeedback=await(await fetch(base+'/api/feedback')).json();
+ assert.ok(publicFeedback.items.some(item=>item.id===communityFeedback.data.id));
+ assert.deepEqual(Object.keys(communityFeedback.data).sort(),['content','createdAt','id','name']);
  assert.deepEqual((await request(a,'/api/questions')).data,[]);
  assert.equal((await request(a,'/api/questions/not-an-id')).status,404);
  assert.equal((await request(a,'/api/attempts',{questionIds:[]})).status,400);

@@ -27,13 +27,14 @@ app.get('/healthz', async (_req,res) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(require('./google-auth').createGoogleAuth());
 app.use('/api', (req,res,next) => {
-  if (['/ai/status','/integrations/pdf'].includes(req.path)) return next();
+  if (['/ai/status','/integrations/pdf'].includes(req.path) || (req.method==='GET' && req.path==='/feedback')) return next();
   return requireAccount(req,res,next);
 });
 app.get('/index.html', (_req, res) => res.redirect('/'));
 app.use(express.static(publicDirectory, { index: false }));
 app.use('/vendor/katex',express.static(path.join(path.dirname(require.resolve('katex/package.json')),'dist')));
 app.get('/', (_req, res) => res.sendFile(path.join(publicDirectory, 'reference.html')));
+require('./feedback')(app,db);
 function pdfChatbotUrl() {
   try {
     const url = new URL(process.env.CHATBOT_URL);
