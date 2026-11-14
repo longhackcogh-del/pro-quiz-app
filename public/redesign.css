@@ -14,3 +14,4 @@ body{min-width:320px}a.btn{display:inline-flex;align-items:center;text-decoratio
 .preview-pagination {display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:16px}
 .option-item.pending{border-color:var(--cyan);background:#12394b;box-shadow:inset 0 0 0 1px var(--cyan)}.option-item:disabled{opacity:1;transform:none;cursor:default}#quiz-options-container[aria-busy=true] .option-item{cursor:progress}
 .practice-actions{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:20px}.option-item.correct-answer{border-color:#2dd49a;background:#123b35}
+#quiz-options-container .option-item{user-select:text;-webkit-user-select:text}#quiz-options-container .option-item span:last-child{cursor:text}

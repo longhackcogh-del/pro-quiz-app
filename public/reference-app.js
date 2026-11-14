@@ -368,7 +368,11 @@ function renderActiveQuestion(message = '') {
     const resultClass = selected ? (pending ? 'pending' : correct ? 'correct' : 'wrong') : !pending && Number.isInteger(question.selectedIndex) && correct ? 'correct-answer' : '';
     return `<button class="option-item ${resultClass}" ${state.busy ? 'disabled' : ''} data-option-index="${option.index}" aria-pressed="${selected}"><span class="option-badge">${letter(index)}.</span><span>${escapeHtml(option.text)}</span></button>`;
   }).join('');
-  document.querySelectorAll('#quiz-options-container .option-item').forEach((item) => item.addEventListener('click', () => chooseAnswer(Number(item.dataset.optionIndex))));
+  document.querySelectorAll('#quiz-options-container .option-item').forEach((item) => item.addEventListener('click', (event) => {
+    const selection=window.getSelection();
+    if(event.detail>0 && selection && !selection.isCollapsed && selection.rangeCount && selection.getRangeAt(0).intersectsNode(item))return;
+    chooseAnswer(Number(item.dataset.optionIndex));
+  }));
   $('#quiz-prev-btn').style.display = attempt.currentIndex > 0 ? 'inline-flex' : 'none';
   if (message) appendMessageToChatWindow('system', message);
 }

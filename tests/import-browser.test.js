@@ -423,6 +423,8 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate('currentQuestion().selectedIndex'),null);
   assert.equal(await evaluate('Boolean(state.answerPending)||state.busy'),false);
   assert.equal(await evaluate("!!document.querySelector('.option-item.correct,.option-item.wrong,.option-item.pending')"),false);
+  const selectedOption=await evaluate("(()=>{const item=document.querySelector('.option-item');const range=document.createRange();range.selectNodeContents(item.lastElementChild);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);item.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));const result={text:selection.toString(),answer:currentQuestion().selectedIndex,pending:Boolean(state.answerPending),selectable:getComputedStyle(item).userSelect};selection.removeAllRanges();return result;})()");
+  assert.ok(selectedOption.text);assert.equal(selectedOption.answer,null);assert.equal(selectedOption.pending,false);assert.equal(selectedOption.selectable,'text');
   await evaluate("window.fetch=(url,options)=>{if(String(url).endsWith('/submit'))window.submitSends++;return window.quizFetch(url,options)};chooseAnswer(1)");
   await evaluate('Promise.all([finishQuiz(),finishQuiz()])');
   assert.equal(await evaluate('window.submitSends'),1);
