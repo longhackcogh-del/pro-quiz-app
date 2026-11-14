@@ -43,14 +43,11 @@ function setView(view) {
 async function refreshHeader(loadStats = true) {
   const status = await api('/api/ai/status');
   state.teacherEnabled = status.teacherEnabled === true;
-  $('#ai-status-label').textContent = status.configured ? (status.connectionVerified ? `${status.provider} đã phản hồi (${status.model})` : `${status.provider} đã cấu hình (${status.model}) — chưa kiểm chứng kết nối`) : 'AI chưa cấu hình: cần khóa API trong .env';
-  $('#ai-status-label').style.color = status.configured ? 'var(--color-success)' : 'var(--color-warning)';
   if (!state.accountId) { $('#badge-question-count').textContent = 'Chưa đăng nhập'; return; }
   if (!loadStats) return;
   const stats = await api('/api/stats');
   $('#badge-question-count').textContent = `${stats.total} câu hỏi`;
 }
-async function loadAIStatus() { try { await refreshHeader(); } catch (error) { $('#ai-status-label').textContent = error.message; } }
 function parseQuestionText(text) { return api('/api/imports/preview', post({ text })); }
 function setImportBusy(busy) {
   state.importBusy = busy;
@@ -534,10 +531,7 @@ function hardResetDatabase() {
   if (!window.confirm('CẢNH BÁO: Tùy chọn này sẽ xóa sạch kho câu hỏi và lịch sử. Xác nhận xóa?')) return;
   api('/api/questions/all', { method: 'DELETE' }).then(() => { state.attempt = null; backToMenu(); window.alert('Đã khôi phục cài đặt gốc.'); }).catch(showError);
 }
-function setupAIStatus() {
-  $('#ai-status-check').addEventListener('click', loadAIStatus);
-  $('#ai-config-help').addEventListener('click', (event) => { event.preventDefault(); window.alert('Với Gemini, nhập GEMINI_API_KEY và GEMINI_MODEL vào .env rồi khởi động lại server. Khóa chỉ dùng ở backend. Kiểm tra cấu hình không gọi API; trạng thái đã phản hồi chỉ xuất hiện sau một yêu cầu thành công. Không nhập khóa vào trình duyệt.'); });
-}
+
 window.openView = openView;
 window.backToMenu = backToMenu;
 window.startQuizSession = startQuizSession;
@@ -564,4 +558,4 @@ window.handleChatFieldKeyPress = handleChatFieldKeyPress;
 window.sendCustomMessageToAI = sendCustomMessageToAI;
 window.resetLearningProgress = resetLearningProgress;
 window.hardResetDatabase = hardResetDatabase;
-document.addEventListener('DOMContentLoaded', () => { setupAIStatus(); loadAIStatus(); });
+document.addEventListener('DOMContentLoaded', () => { refreshHeader().catch(showError); });

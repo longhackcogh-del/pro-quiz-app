@@ -95,8 +95,6 @@ const originalRefreshHeader = refreshHeader;
 refreshHeader = async function() {
   const [,dashboard] = await Promise.all([originalRefreshHeader(false),state.accountId ? api('/api/dashboard') : Promise.resolve(null)]);
   syncTeacherAvailability();
-  $('#dashboard-ai-status').textContent = $('#ai-status-label').textContent;
-  $('#ai-verified-badge').textContent = $('#ai-status-label').textContent.includes(' đã phản hồi (') ? 'Đã phản hồi' : 'Chưa xác minh';
   if (!state.accountId) return;
   if (!dashboard) return;
   $('#badge-question-count').textContent = `${dashboard.total} câu hỏi`;

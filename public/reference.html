@@ -46,8 +46,7 @@
   </div>
   <div class="section-title"><h2>Tiếp tục hành trình</h2><span></span></div>
   <div class="grid content-grid">
-<div class="panel"><h3>Bài luyện tập gần đây</h3><div id="recent-attempts"><p class="empty">Đang tải tiến trình…</p></div></div>
-   <div class="panel"><h3>Trạng thái AI</h3><div class="row-item"><div class="stat-icon">✦</div><div class="grow"><b>AI phân tích đáp án</b><small><span id="dashboard-ai-status">Đang kiểm tra cấu hình…</span></small></div></div><div class="row-item"><div class="stat-icon">◉</div><div class="grow"><b>Giáo viên AI</b><small>Hỏi đáp theo từng câu trong lượt luyện tập</small></div></div><button class="btn" style="width:100%;margin-top:14px" onclick="navigateTo('v-settings')">Kiểm tra cấu hình AI</button></div>
+<div class="panel" style="grid-column:1/-1"><h3>Bài luyện tập gần đây</h3><div id="recent-attempts"><p class="empty">Đang tải tiến trình…</p></div></div>
   </div>
  </section>
 
@@ -112,9 +111,9 @@
   <div id="feedback-list" class="feedback-list" aria-live="polite"></div><button class="btn" id="feedback-more" hidden onclick="loadMoreFeedback()">Xem phản hồi cũ hơn</button>
  </section>
  <section class="view-content page" id="v-settings">
-  <div class="page-head"><div><h1>Cài đặt & hướng dẫn</h1><p>Quản lý kết nối AI, tài khoản và dữ liệu học tập.</p></div></div>
+  <div class="page-head"><div><h1>Cài đặt & hướng dẫn</h1><p>Quản lý tài khoản, dữ liệu và hướng dẫn học tập.</p></div></div>
   <div class="grid content-grid">
-   <div class="panel"><h3>Tài khoản</h3><div class="row-item"><div class="stat-icon">G</div><div class="grow"><b>Đăng nhập bằng Google</b><small id="account-status">Đang kiểm tra cấu hình Google…</small></div><button class="btn" onclick="openLogin()">Đăng nhập</button></div><h3 style="margin-top:24px">Trạng thái AI</h3><div class="row-item"><div class="grow"><b>Backend AI</b><small id="ai-status-label">Đang kiểm tra cấu hình…</small></div><span id="ai-verified-badge" class="tag warn">Chưa xác minh</span></div><button class="btn primary" id="ai-status-check">Kiểm tra cấu hình</button><p><a href="#" id="ai-config-help" class="small muted">Hướng dẫn cấu hình AI</a></p></div>
+   <div class="panel"><h3>Tài khoản</h3><div class="row-item"><div class="stat-icon">G</div><div class="grow"><b>Đăng nhập bằng Google</b><small id="account-status">Đang kiểm tra cấu hình Google…</small></div><button class="btn" onclick="openLogin()">Đăng nhập</button></div></div>
    <div class="panel"><h3>Hướng dẫn nhanh</h3><button class="btn ghost" onclick="navigateTo('v-help')">Xem mẫu định dạng A–D →</button><div class="row-item"><div class="grow"><b>Định dạng câu hỏi</b><small>Câu hỏi + bốn lựa chọn A, B, C, D. Mỗi câu nên có đáp án rõ ràng.</small></div></div><div class="row-item"><div class="grow"><b>Xác nhận đáp án</b><small>Chỉ câu đã xác nhận mới được đưa vào lượt luyện tập và chấm điểm.</small></div></div><div class="row-item"><div class="grow"><b>Quản lý dữ liệu</b><small>Reset tiến trình hoặc xóa toàn bộ dữ liệu cần xác nhận riêng.</small></div></div></div>
   </div>
   <div class="panel" style="margin-top:16px"><h3>Quản lý dữ liệu</h3><p class="muted small">Các thao tác nguy hiểm được tách khỏi luồng học tập.</p><button class="btn" onclick="resetLearningProgress()">Reset tiến trình</button> <button class="btn danger" onclick="hardResetDatabase()">Xóa toàn bộ dữ liệu</button></div>
