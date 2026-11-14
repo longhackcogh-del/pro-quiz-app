@@ -398,7 +398,6 @@ async function chooseAnswer(index) {
     state.savedCursor={id:attemptId,index:saved.currentIndex};state.answerPending=null;
     renderActiveQuestion();
     appendMessageToChatWindow('system',saved.feedback.correct ? 'Chính xác!' : `Chưa đúng. Đáp án: ${letter(question.options.findIndex(option=>option.index===question.answerIndex))}.`);
-    if (!saved.feedback.correct) runAutoAIEvaluation(question,index);
     state.transitionTimer=window.setTimeout(()=>advancePractice(attemptId,question.id,run),saved.feedback.correct?350:650);
   } catch(error) {
     if (practiceRun!==run || state.attempt?.id!==attemptId) return;
@@ -507,13 +506,6 @@ async function askAI(message, question = currentQuestion(), attemptId = state.at
   if (!state.teacherEnabled) throw new Error('Giáo viên AI đang tạm khóa.');
   const response = await api(`/api/attempts/${attemptId}/questions/${question.id}/chat`, post({ message }));
   if (state.attempt?.id === attemptId && currentQuestion()?.id === question.id && state.view === 'v-quiz') appendMessageToChatWindow('ai', response.content);
-}
-async function runAutoAIEvaluation(question, selectedIndex) {
-  if (!state.teacherEnabled) return;
-  setAIStatusIndicator(true);
-  try { await askAI(`Tôi vừa chọn ${letter(question.options.findIndex((option) => option.index === selectedIndex))} và trả lời sai. Hãy giải thích vì sao lựa chọn của tôi chưa đúng và vì sao đáp án đúng phù hợp.`, question); }
-  catch (error) { appendMessageToChatWindow('system', error.message); }
-  finally { setAIStatusIndicator(false); }
 }
 async function sendCustomMessageToAI() {
   if (!state.teacherEnabled) return showError(new Error('Giáo viên AI đang tạm khóa.'));

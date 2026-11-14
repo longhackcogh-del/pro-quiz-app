@@ -185,6 +185,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(db.prepare('SELECT answer_index FROM questions WHERE id=?').get(pendingId).answer_index, 1);
   await evaluate("(async()=>{state.attempt=await api('/api/attempts',post({})); await showQuiz(); document.querySelector('#ai-chat-input-field').value='slow'; const pending=sendCustomMessageToAI(); state.attempt.currentIndex=1; await showQuiz(); await pending;})()");
   assert.equal(await evaluate("document.querySelector('#ai-messages-box .chat-bubble.ai') === null"), true);
+
   // Same frontend with no API key: actual upload + manual confirmation still work.
   process.env.OPENAI_API_KEY = '';
   await evaluate(`openView('v-paste'); processLocalFileParsing({target:{files:[new File([${JSON.stringify(text.split('\n\n')[0])}], 'exam.txt', {type:'text/plain'})]}})`);
@@ -438,6 +439,11 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate('state.attempt.score'),2);
   assert.equal(await evaluate('state.view'),'v-result');
   await evaluate('window.fetch=window.quizFetch');
+  await evaluate("(async()=>{state.attempt=await api('/api/attempts',post({}));await showQuiz();window.manualChatFetch=window.fetch;window.manualChatPosts=0;window.fetch=(url,options)=>{if(String(url).endsWith('/chat')&&options?.method==='POST')window.manualChatPosts++;return window.manualChatFetch(url,options)};state.teacherEnabled=true;const questions=await api('/api/questions');const question=currentQuestion();const correct=questions.find(q=>q.id===question.id).answerIndex;await chooseAnswer((correct+1)%4);clearTimeout(state.transitionTimer);const position=state.attempt.currentIndex;await navigatePractice(position===0?1:0);await navigatePractice(position);})()");
+  assert.equal(await evaluate('window.manualChatPosts'),0,'Wrong answer and revisiting must not request AI');
+  await evaluate("quickChat('Explain this question')");
+  assert.equal(await evaluate('window.manualChatPosts'),1,'Only an explicit question requests AI');
+  await evaluate('window.fetch=window.manualChatFetch');
   await evaluate("renderImportPreview({questions:Array.from({length:5000},(_,i)=>({id:'large-'+i,prompt:'Preview '+i,options:['A','B','C','D'],answerIndex:2,answerStatus:'confirmed'}))})");
   assert.equal(await evaluate("document.querySelectorAll('#import-preview .preview-question').length"),25);
   await evaluate("document.querySelector('[data-prompt]').value='Edited first';document.querySelector('[data-prompt]').dispatchEvent(new Event('input'));changeImportPreviewPage(2)");
