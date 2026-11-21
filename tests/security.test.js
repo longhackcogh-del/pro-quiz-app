@@ -8,6 +8,13 @@ test('Security: no early answers, cross-site writes blocked, private files hidde
  const app=loadAuthenticatedApp(),db=require('../server/database');
  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.on('listening',resolve));
  const base='http://127.0.0.1:'+server.address().port;
+ const prepare=db.prepare;let pingQueries=0;
+ db.prepare=function(...args){pingQueries++;return prepare.apply(this,args);};
+ try {
+  const ping=await globalThis.fetch(base+'/ping');
+  assert.equal(ping.status,200);assert.equal(await ping.text(),'OK');
+  assert.equal(ping.headers.get('cache-control'),'no-store');assert.equal(pingQueries,0);
+ } finally {db.prepare=prepare;}
  t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();fs.rmSync(directory,{recursive:true,force:true});});
  const fetch=await authenticatedFetch(base);
  const request=async(route,body,method='POST',extra={})=>{const r=await fetch(base+route,{...(body!==undefined?{method,body:JSON.stringify(body)}:{}),headers:{'Content-Type':'application/json',...extra}});return {status:r.status,data:r.status===204?null:await r.json()};};

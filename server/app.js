@@ -20,6 +20,7 @@ const port = Number(process.env.PORT) || 3000;
 const publicDirectory = path.join(__dirname, '..', 'public');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+app.get('/ping', (_req,res) => res.set('Cache-Control','no-store').type('text/plain').send('OK'));
 app.get('/healthz', async (_req,res) => {
   try { (await db.prepare('SELECT 1').get()); res.json({status:'ok'}); }
   catch { res.status(503).json({status:'unavailable'}); }

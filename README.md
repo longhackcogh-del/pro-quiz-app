@@ -88,6 +88,12 @@ Xem [bảo vệ và hướng dẫn thay khóa đã lộ](SECURITY.md). API luy�
 
 ## Portfolio / CV
 
+### Kiểm tra web định kỳ
+
+Workflow **Website uptime check** gọi `GET /ping` mỗi 10 phút từ GitHub Actions, độc lập với máy cá nhân. Endpoint trả `OK`, không đăng nhập, không gọi database hoặc AI; `/healthz` vẫn kiểm tra database cho Render. Xem kết quả hoặc chạy thủ công tại GitHub → Actions → Website uptime check. Tắt bằng Disable workflow nếu không muốn chạy nữa.
+
+Đây là giải pháp giảm ngủ của Render Free, không cam kết 24/7: lịch GitHub có thể trễ hoặc bị bỏ lượt, và tự tắt sau 60 ngày repo không hoạt động. Render vẫn áp dụng giới hạn giờ chạy dùng chung trong workspace. Tham chiếu: [GitHub schedule](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule), [Render Free](https://render.com/docs/free).
+
 Sau khi triển khai thành công, thêm URL thật vào phần About của GitHub và README. Có thể dùng mô tả:
 
 > Xây dựng ứng dụng luyện thi với Node.js, Express và SQLite; tích hợp Google OAuth, dữ liệu riêng theo tài khoản, nhập tài liệu, quản lý bộ câu hỏi và ôn câu sai. Bổ sung kiểm thử tích hợp và cấu hình CI/deployment.

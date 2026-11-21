@@ -1,0 +1,18 @@
+name: Website uptime check
+on:
+  schedule:
+    - cron: '3,13,23,33,43,53 * * * *'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: website-uptime
+  cancel-in-progress: false
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check public web server without database or AI calls
+        run: |
+          response=$(curl --fail --silent --show-error --connect-timeout 15 --max-time 70 --retry 1 --retry-delay 5 --retry-max-time 150 https://pro-quiz-app-bsf3.onrender.com/ping)
+          test "$response" = "OK"
