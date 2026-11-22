@@ -35,7 +35,7 @@ async function api(url, options = {}) {
   return data;
 }
 function post(body) { return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }; }
-function showError(error) { window.alert(error.message || String(error)); }
+function showError(error) { toast(error.message || String(error)); }
 function setView(view) {
   document.querySelectorAll('.view-content').forEach((item) => item.classList.toggle('active', item.id === view));
   state.view = view;
@@ -147,7 +147,7 @@ async function saveImportPreview(start = false) {
     $('#import-preview').hidden = true;
     $('#paste-input').value = '';
     await refreshHeader();
-    window.alert(`Đã thêm ${result.imported.length} câu vào kho c? nh?n: ${confirmedCount} đã xác nhận, ${result.imported.length - confirmedCount} chờ duyệt.`);
+    toast(`Đã thêm ${result.imported.length} câu vào kho c? nh?n: ${confirmedCount} đã xác nhận, ${result.imported.length - confirmedCount} chờ duyệt.`);
     if (start) {
       // Start the confirmed shared bank rather than resuming an unrelated old attempt.
       state.attempt = await api('/api/attempts', post({}));
@@ -279,7 +279,7 @@ async function handleEditSave() {
     if (!question) throw new Error(parsed.invalid?.[0]?.error || 'Khối đề sửa không đúng định dạng.');
     if (question.answerIndex == null) throw new Error('Khối sửa phải có Đáp án: A/B/C/D.');
     await api(`/api/questions/${current.id}`, { ...post({ answerIndex: question.answerIndex, prompt: question.prompt, options: question.options }), method: 'PATCH' });
-    window.alert(`Đã cập nhật câu hỏi số ${index}.`);
+    toast(`Đã cập nhật câu hỏi số ${index}.`);
     backToMenu();
   } catch (error) { showError(error); }
 }
@@ -288,9 +288,9 @@ async function deleteQuestionAt(index) {
     const questions = await api('/api/questions');
     const question = questions[index - 1];
     if (!question) throw new Error('Số thứ tự câu cần xóa không tồn tại.');
-    if (!window.confirm(`Bạn chắc chắn muốn xóa câu hỏi số ${index}?`)) return;
+    if (!await appConfirm(`Câu hỏi số ${index} sẽ bị xóa khỏi kho.`,{title:'Xóa câu hỏi?',accept:'Xóa câu hỏi',danger:true})) return;
     await api(`/api/questions/${question.id}`, { method: 'DELETE' });
-    window.alert('Xóa câu hỏi thành công.');
+    toast('Xóa câu hỏi thành công.');
     await openViewQuestions();
     await refreshHeader();
   } catch (error) { showError(error); }
@@ -541,13 +541,13 @@ async function sendCustomMessageToAI() {
   finally { setAIStatusIndicator(false); }
 }
 function handleChatFieldKeyPress(event) { if (event.key === 'Enter') { event.preventDefault(); sendCustomMessageToAI(); } }
-function resetLearningProgress() {
-  if (!window.confirm('Chỉ xóa các phiên đang làm để bắt đầu lại? Kho câu hỏi và lịch sử câu sai đã hoàn thành sẽ được giữ nguyên.')) return;
-  api('/api/progress', { method: 'DELETE' }).then(() => { backToMenu(); window.alert('Đã reset tiến trình làm bài.'); }).catch(showError);
+async function resetLearningProgress() {
+  if (!await appConfirm('Các bài đang làm sẽ được xóa. Kho câu hỏi và lịch sử câu sai đã hoàn thành được giữ nguyên.',{title:'Đặt lại tiến trình?',accept:'Đặt lại tiến trình',danger:true})) return;
+  return api('/api/progress', { method: 'DELETE' }).then(() => { backToMenu(); toast('Đã reset tiến trình làm bài.'); }).catch(showError);
 }
-function hardResetDatabase() {
-  if (!window.confirm('CẢNH BÁO: Tùy chọn này sẽ xóa sạch kho câu hỏi và lịch sử. Xác nhận xóa?')) return;
-  api('/api/questions/all', { method: 'DELETE' }).then(() => { state.attempt = null; backToMenu(); window.alert('Đã khôi phục cài đặt gốc.'); }).catch(showError);
+async function hardResetDatabase() {
+  if (!await appConfirm('Toàn bộ câu hỏi, bài làm và lịch sử của tài khoản sẽ bị xóa. Bạn không thể hoàn tác thao tác này.',{title:'Xóa toàn bộ dữ liệu?',accept:'Xóa dữ liệu',danger:true})) return;
+  return api('/api/questions/all', { method: 'DELETE' }).then(() => { state.attempt = null; backToMenu(); toast('Đã khôi phục cài đặt gốc.'); }).catch(showError);
 }
 
 window.openView = openView;

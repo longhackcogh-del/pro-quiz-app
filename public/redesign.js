@@ -123,6 +123,7 @@ function loginFeedback(message) {
 function resetAccountData(accountId) {
   resetPracticeInteraction();
   resetPracticePicker();
+  resetAppDialog();
   state.practiceLoading=null;
   questionSets=[];questionFolders=[];bankFolder=null;renderQuestionSets();
   if($('#move-set-dialog').open)$('#move-set-dialog').close();

@@ -84,7 +84,7 @@ function toggleQuestionSelection(id,checked) { if (checked) bankSelected.add(id)
 function toggleSelectPage(checked) { bankPageData().visible.forEach(question => { if (checked) bankSelected.add(question.id); else bankSelected.delete(question.id); }); renderBank(); }
 
 async function bulkDelete() {
-  if (bankMutationBusy || !bankSelected.size || !window.confirm(`Xóa ${bankSelected.size} câu đã chọn khỏi kho thật? Lịch sử liên quan cũng có thể bị xóa.`)) return;
+  if (bankMutationBusy || !bankSelected.size || !await appConfirm(`Xóa ${bankSelected.size} câu đã chọn? Lịch sử liên quan cũng có thể bị xóa.`,{title:'Xóa câu hỏi đã chọn?',accept:'Xóa câu hỏi',danger:true})) return;
   bankMutationBusy = true;
   renderBank();
   let deleted = 0;
@@ -100,7 +100,7 @@ async function bulkConfirm() {
   if (bankMutationBusy || !bankSelected.size) return;
   const candidates = state.questions.filter(question => bankSelected.has(question.id) && question.answerStatus !== 'confirmed').map(question => ({id:question.id, answer:bankAnswerDrafts.has(question.id) ? bankAnswerDrafts.get(question.id) : question.aiSuggestionIndex})).filter(question => Number.isInteger(question.answer) && question.answer >= 0 && question.answer <= 3);
   if (!candidates.length) return toast('Chọn đáp án cho các câu chờ duyệt trước khi xác nhận hàng loạt.');
-  if (!window.confirm(`Bạn đã kiểm tra đáp án cho ${candidates.length} câu và xác nhận dùng chúng để chấm điểm? Các câu chưa có đáp án sẽ được bỏ qua.`)) return;
+  if (!await appConfirm(`Bạn đã kiểm tra đáp án cho ${candidates.length} câu và xác nhận dùng chúng để chấm điểm? Các câu chưa có đáp án sẽ được bỏ qua.`,{title:'Xác nhận đáp án',accept:'Tôi đã kiểm tra'})) return;
   bankMutationBusy = true;
   renderBank();
   let confirmed = 0;
@@ -146,7 +146,7 @@ async function saveEdit() {
   finally { $('#bank-edit-save').disabled = false; }
 }
 async function deleteQuestion(id) {
-  if (!window.confirm(`Xóa câu hỏi #${id} khỏi kho?`)) return;
+  if (!await appConfirm(`Câu hỏi #${id} sẽ bị xóa khỏi kho cùng lịch sử liên quan.`,{title:'Xóa câu hỏi?',accept:'Xóa câu hỏi',danger:true})) return;
   try { await api(`/api/questions/${id}`,{method:'DELETE'}); bankSelected.delete(id); await openViewQuestions(); await refreshHeader(); toast('Đã xóa câu hỏi.'); }
   catch (error) { showError(error); }
 }
@@ -180,21 +180,22 @@ function renderQuestionSets() {
   refreshPracticeChoices();
 }
 async function createQuestionSet() {
-  const name=window.prompt('Tên bộ câu hỏi mới:');
+  const folderId=bankFolder;
+  const name=await appPrompt('Tạo bộ câu hỏi');
   if (!name?.trim()) return;
-  try { const set=await api('/api/question-sets',post({name,folderId:bankFolder})); await loadQuestionSets(); $('#question-set-filter').value=String(set.id); bankFilterChanged(); }
+  try { const set=await api('/api/question-sets',post({name,folderId})); await loadQuestionSets(); $('#question-set-filter').value=String(set.id); bankFilterChanged(); }
   catch(error) { showError(error); }
 }
 function selectedQuestionSet() { return questionSets.find(set=>String(set.id)===$('#question-set-filter').value); }
 async function renameQuestionSet() {
   const set=selectedQuestionSet(); if (!set) return toast('Chọn một bộ câu hỏi để đổi tên.');
-  const name=window.prompt('Tên mới:',set.name); if (!name?.trim()) return;
+  const name=await appPrompt('Đổi tên bộ câu hỏi',set.name); if (!name?.trim()) return;
   try { await api('/api/question-sets/'+set.id,{...post({name}),method:'PATCH'}); await loadQuestionSets(); }
   catch(error) { showError(error); }
 }
 async function deleteQuestionSet() {
   const set=selectedQuestionSet(); if (!set) return toast('Chọn một bộ câu hỏi để xóa.');
-  if (!window.confirm(`Xóa bộ “${set.name}”? Câu hỏi được giữ ở mục Chưa phân loại.`)) return;
+  if (!await appConfirm(`Bộ “${set.name}” sẽ được gỡ. Các câu hỏi được giữ ở mục Chưa phân loại.`,{title:'Xóa bộ câu hỏi?',accept:'Xóa bộ',danger:true})) return;
   try { await api('/api/question-sets/'+set.id,{method:'DELETE'}); await openViewQuestions(); }
   catch(error) { showError(error); }
 }

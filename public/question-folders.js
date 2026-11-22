@@ -22,18 +22,18 @@ function openLibrarySet(id){
 }
 function practiceLibrarySet(id){$('#question-set-filter').value=String(id);return practiceQuestionSet();}
 async function createQuestionFolder(){
-  const name=window.prompt('Tên thư mục mới (ví dụ: Tiếng Anh, Toán cao cấp):');if(!name?.trim())return;
+  const name=await appPrompt('Tạo thư mục mới');if(!name?.trim())return;
   try{const folder=await api('/api/question-folders',post({name}));await loadQuestionSets();openQuestionFolder(folder.id);}
   catch(error){showError(error);}
 }
 async function renameQuestionFolder(){
   const folder=questionFolders.find(item=>item.id===bankFolder);if(!folder)return;
-  const name=window.prompt('Đổi tên thư mục:',folder.name);if(!name?.trim())return;
+  const name=await appPrompt('Đổi tên thư mục',folder.name);if(!name?.trim())return;
   try{await api('/api/question-folders/'+folder.id,{...post({name}),method:'PATCH'});await loadQuestionSets();}
   catch(error){showError(error);}
 }
 async function deleteQuestionFolder(){
-  const folder=questionFolders.find(item=>item.id===bankFolder);if(!folder || !window.confirm(`Xóa thư mục “${folder.name}”? Các bộ và câu hỏi bên trong được giữ lại ở Thư viện của tôi.`))return;
+  const folder=questionFolders.find(item=>item.id===bankFolder);if(!folder || !await appConfirm(`Thư mục “${folder.name}” sẽ được gỡ. Các bộ và câu hỏi bên trong được giữ lại ở Thư viện của tôi.`,{title:'Xóa thư mục?',accept:'Xóa thư mục',danger:true}))return;
   try{await api('/api/question-folders/'+folder.id,{method:'DELETE'});bankFolder=null;await loadQuestionSets();openQuestionFolder(null);}
   catch(error){showError(error);}
 }

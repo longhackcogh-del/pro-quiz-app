@@ -113,6 +113,13 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
     }
     throw new Error(`Browser condition did not become true: ${expression}`);
   }
+  async function dialogAction(expression,{value,accept=true}={}){
+    await evaluate(`window.appDialogTask=${expression};undefined`);
+    await until("document.querySelector('#app-dialog').open");
+    if(value!==undefined)await evaluate(`document.querySelector('#app-dialog-input').value=${JSON.stringify(value)}`);
+    if(expression==='createQuestionFolder()')await screenshot('app-folder-name-dialog');
+    await evaluate(`document.querySelector('#app-dialog-${accept?'accept':'cancel'}').click();window.appDialogTask`);
+  }
   async function screenshot(name) {
     if (!process.env.PRO_QUIZ_CAPTURE_SCREENSHOTS) return;
     await evaluate("document.getAnimations().filter(animation => animation.effect.getTiming().iterations !== Infinity).forEach(animation => animation.finish())");
@@ -150,7 +157,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   }
   await signBrowserIn();
   await evaluate('closeLogin()');
-  await evaluate("window.testAlerts=[]; window.alert=(message)=>window.testAlerts.push(message); window.confirm=()=>true; openView('v-paste')");
+  await evaluate("window.alert=window.confirm=window.prompt=()=>{throw Error('Native browser dialogs must not be used')};openView('v-paste')");
   const text = '1. Could you check the departure time .............. we leave for the airport? A. throughout B. during C. until D. before\n\n2. According to the passage, why did he leave? A. Work B. Study C. Travel D. Family';
   await evaluate(`document.querySelector('#paste-input').value=${JSON.stringify(text)}; handleAIQuestionAnalysis()`);
   assert.equal(await evaluate('state.pending.length'), 2);
@@ -198,8 +205,16 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate('state.attempt.total'), 3);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count, 3);
   await evaluate('openViewQuestions()');
-  await evaluate("window.prompt=()=> 'Chapter 1'; createQuestionSet()");
+  const beforeCancelledCreate=await evaluate('questionSets.length');
+  await dialogAction('createQuestionSet()',{accept:false});
+  assert.equal(await evaluate('questionSets.length'),beforeCancelledCreate);
+  await dialogAction('createQuestionSet()',{value:'Chapter 1'});
   assert.equal(await evaluate('questionSets.length'),1);
+  await dialogAction('renameQuestionSet()',{value:'Cancelled name',accept:false});
+  assert.equal(await evaluate('selectedQuestionSet().name'),'Chapter 1');
+  const beforeCancelledReset=db.prepare('SELECT COUNT(*) AS count FROM questions').get().count;
+  await dialogAction('hardResetDatabase()',{accept:false});
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,beforeCancelledReset);
   await evaluate("toggleQuestionSelection(state.questions[0].id,true); document.querySelector('#question-set-target').value=String(questionSets[0].id); moveSelectedQuestions()");
   assert.equal(await evaluate('filteredBankQuestions().length'),1);
   await evaluate('window.beforeSetPractice=state.attempt; practiceQuestionSet()');
@@ -208,7 +223,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate("document.querySelector('#practice-picker-button').textContent"),'Chapter 1');
   assert.equal(await evaluate("document.querySelector('#v-quiz .practice-focus')"),null);
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.practice-layout')).gridTemplateColumns.split(' ').length"),1);
-  await evaluate("window.confirm=()=>{throw Error('Native confirm must not be used for practice')};createNewPractice()");
+  await evaluate("createNewPractice()");
   assert.equal(await evaluate("document.querySelector('#practice-picker-dialog').open"),true);
   await evaluate('startSelectedPractice()');
   assert.equal(await evaluate('state.attempt.total'),1);
@@ -231,13 +246,13 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate("document.querySelector('#practice-decision-alternative').click();window.resumeTask");
   assert.equal(await evaluate("document.querySelector('#practice-picker-dialog').open"),true);
   assert.equal(await evaluate("document.querySelector('#practice-selection-start').disabled"),false);
-  await evaluate("document.querySelector('#practice-picker-dialog').close();window.confirm=()=>true");
+  await evaluate("document.querySelector('#practice-picker-dialog').close()");
   assert.equal(await evaluate("formatQuizDate('2026-11-23T10:00:00.000Z')===formatQuizDate('2026-11-23 10:00:00')"),true);
   assert.equal(await evaluate("formatQuizDate('invalid')"),'—');
   await evaluate('state.attempt=window.beforeSetPractice; openViewQuestions()');
-  await evaluate("window.prompt=()=> 'Renamed chapter'; renameQuestionSet()");
+  await dialogAction('renameQuestionSet()',{value:'Renamed chapter'});
   assert.equal(await evaluate('selectedQuestionSet().name'),'Renamed chapter');
-  await evaluate('deleteQuestionSet()');
+  await dialogAction('deleteQuestionSet()');
   assert.equal(await evaluate('questionSets.length'),0);
   assert.equal(await evaluate('state.questions.length'),3);
   await evaluate("document.querySelector('#bank-search').value='no-such-question-xyz'; filterQuestionBank()");
@@ -323,13 +338,14 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate("editQuestion(1); document.querySelector('#editCorrect').value='2'; document.querySelector('#editConfirmed').checked=true; saveEdit()");
   assert.equal(db.prepare('SELECT answer_index FROM questions WHERE id=1').get().answer_index,2);
   const pendingIds = await evaluate("state.questions.filter(question=>question.answerStatus!=='confirmed').slice(0,2).map(question=>question.id)");
-  await evaluate(`bankSelected.clear(); bankSelected.add(${pendingIds[0]}); bankSelected.add(${pendingIds[1]}); bankAnswerDrafts.set(${pendingIds[0]},1); window.confirm=()=>false; bulkConfirm()`);
+  await evaluate(`bankSelected.clear(); bankSelected.add(${pendingIds[0]}); bankSelected.add(${pendingIds[1]}); bankAnswerDrafts.set(${pendingIds[0]},1)`);
+  await dialogAction('bulkConfirm()',{accept:false});
   assert.equal(db.prepare('SELECT answer_status FROM questions WHERE id=?').get(pendingIds[0]).answer_status,'unconfirmed');
-  await evaluate('window.confirm=()=>true; bulkConfirm()');
+  await dialogAction('bulkConfirm()');
   assert.equal(db.prepare('SELECT answer_index FROM questions WHERE id=?').get(pendingIds[0]).answer_index,1);
   assert.equal(db.prepare('SELECT answer_status FROM questions WHERE id=?').get(pendingIds[1]).answer_status,'unconfirmed');
   assert.equal(await evaluate('bankSelected.size'),1);
-  await evaluate('bulkDelete()');
+  await dialogAction('bulkDelete()');
   assert.equal(db.prepare('SELECT id FROM questions WHERE id=?').get(pendingIds[1]),undefined);
   assert.equal(await evaluate('bankSelected.size'),0);
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);
@@ -381,7 +397,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await screenshot('app-login-cancelled');
   await signBrowserIn();
   // External ChatGPT -> real DOCX upload -> automatic preview -> explicit save.
-  await evaluate("window.alert=()=>{}; window.confirm=()=>true; closeLogin(); setView('v-paste'); openImportGuide()");
+  await evaluate("closeLogin();setView('v-paste');openImportGuide()");
   assert.equal(await evaluate("document.querySelector('#import-guide').open"),true);
   assert.ok(await evaluate("document.querySelector('#word-preparation-prompt').value.includes('Đáp án: C')"));
   await evaluate("Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.copiedQuizPrompt=text}}}); copyWordPrompt()");
@@ -502,12 +518,12 @@ D. \(\int_0^1 x\,dx\)
   assert.equal(await evaluate("document.querySelector('[data-answer]').value"),'1');
   assert.equal(await evaluate('collectPreview().length'),5000);
   await evaluate("openViewQuestions()");
-  await evaluate("window.prompt=()=> 'Tiếng Anh';createQuestionFolder()");
+  await dialogAction('createQuestionFolder()',{value:'Tiếng Anh'});
   assert.equal(await evaluate("document.querySelector('#folder-current').textContent"),'Tiếng Anh');
-  await evaluate("window.prompt=()=> 'Unit 8 - phần 1';createQuestionSet()");
+  await dialogAction('createQuestionSet()',{value:'Unit 8 - phần 1'});
   await evaluate("window.folderUnitId=Number(document.querySelector('#question-set-filter').value);window.folderId=bankFolder;toggleQuestionSelection(state.questions[0].id,true);document.querySelector('#question-set-target').value=String(window.folderUnitId);moveSelectedQuestions()");
   assert.equal(await evaluate('filteredBankQuestions().length'),1);
-  await evaluate("window.prompt=()=> 'Unit 8 - phần 2';createQuestionSet()");
+  await dialogAction('createQuestionSet()',{value:'Unit 8 - phần 2'});
   await evaluate("window.emptyPracticeId=Number(document.querySelector('#question-set-filter').value);openPracticePicker()");
   await evaluate("clearPracticeSelection();togglePracticeSet(String(window.emptyPracticeId),true);startSelectedPractice()");
   assert.equal(await evaluate("document.querySelector('#practice-picker-dialog').open"),true);
@@ -553,9 +569,10 @@ D. \(\int_0^1 x\,dx\)
   await evaluate('openSetFolderDialog(window.folderUnitId)');
   await evaluate("document.querySelector('#set-folder-target').value='none';moveSetToFolder({preventDefault(){}})");
   assert.equal(await evaluate('questionSets.find(set=>set.id===window.folderUnitId).folderId'),null);
-  await evaluate("openQuestionFolder(window.folderId);window.prompt=()=> 'English renamed';renameQuestionFolder()");
+  await evaluate('openQuestionFolder(window.folderId)');
+  await dialogAction('renameQuestionFolder()',{value:'English renamed'});
   assert.equal(await evaluate("document.querySelector('#folder-current').textContent"),'English renamed');
-  await evaluate("window.confirm=()=>true;deleteQuestionFolder()");
+  await dialogAction('deleteQuestionFolder()');
   assert.equal(await evaluate('questionFolders.length'),0);
   assert.ok(await evaluate('questionSets.some(set=>set.id===window.folderUnitId && set.questionCount===1)'));
   await evaluate('openFeedback()');
