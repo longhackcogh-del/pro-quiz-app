@@ -418,10 +418,12 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate('saveImportPreview()');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,chapterBefore+1);
   // A slow save must show selection immediately, never an invented grade.
-  await evaluate("(async()=>{const saved=await api('/api/questions/import',post({questions:['Fast one','Fast two'].map(prompt=>({prompt,options:['a','b','c','d'],answerIndex:1,confirmed:true}))}));state.attempt=await api('/api/attempts',post({questionIds:saved.imported.map(q=>q.id)}));state.teacherEnabled=false;await showQuiz();window.quizFetch=window.fetch;window.answerSends=0;window.chatReads=0;window.submitSends=0;window.fetch=(url,options)=>{if(String(url).endsWith('/chat'))window.chatReads++;if(String(url).endsWith('/submit'))window.submitSends++;if(String(url).endsWith('/answer')){window.answerSends++;return new Promise(resolve=>setTimeout(resolve,180)).then(()=>window.quizFetch(url,options));}return window.quizFetch(url,options);};window.pickTask=chooseAnswer(1).then(()=>{window.feedbackShown=!!document.querySelector('.option-item.correct')});window.immediatePick={pending:!!document.querySelector('.option-item.pending'),graded:!!document.querySelector('.option-item.correct,.option-item.wrong'),disabled:[...document.querySelectorAll('.option-item')].every(button=>button.disabled)};})()");
+  await evaluate("(async()=>{const saved=await api('/api/questions/import',post({questions:['Fast one','Fast two'].map(prompt=>({prompt,options:['a','b','c','d'],answerIndex:1,confirmed:true}))}));state.attempt=await api('/api/attempts',post({questionIds:saved.imported.map(q=>q.id)}));state.teacherEnabled=false;await showQuiz();window.quizFetch=window.fetch;window.answerSends=0;window.chatReads=0;window.submitSends=0;window.fetch=(url,options)=>{if(String(url).endsWith('/chat'))window.chatReads++;if(String(url).endsWith('/submit'))window.submitSends++;if(String(url).endsWith('/answer')){window.answerSends++;return new Promise(resolve=>setTimeout(resolve,180)).then(()=>window.quizFetch(url,options));}return window.quizFetch(url,options);};window.soundEvents=[];window.soundPlay=quizSound.play;quizSound.play=name=>{window.soundEvents.push(name);return window.soundPlay(name)};window.pickTask=chooseAnswer(1).then(()=>{window.feedbackShown=!!document.querySelector('.option-item.correct')});window.immediatePick={pending:!!document.querySelector('.option-item.pending'),graded:!!document.querySelector('.option-item.correct,.option-item.wrong'),disabled:[...document.querySelectorAll('.option-item')].every(button=>button.disabled)};})()");
   assert.deepEqual(await evaluate('window.immediatePick'),{pending:true,graded:false,disabled:true});
+  assert.deepEqual(await evaluate('window.soundEvents'),[]);
   await evaluate('window.pickTask');
   assert.equal(await evaluate('window.feedbackShown'),true);
+  assert.deepEqual(await evaluate('window.soundEvents'),['correct']);
   await until('state.attempt.currentIndex===1 && !state.busy');
   assert.equal(await evaluate('window.answerSends'),1);
   assert.equal(await evaluate('window.chatReads'),0);
@@ -430,6 +432,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate("window.fetch=(url,options)=>String(url).endsWith('/answer')?Promise.reject(new Error('Test offline')):window.quizFetch(url,options);chooseAnswer(0)");
   assert.equal(await evaluate('currentQuestion().selectedIndex'),null);
   assert.equal(await evaluate('Boolean(state.answerPending)||state.busy'),false);
+  assert.deepEqual(await evaluate('window.soundEvents'),['correct']);
   assert.equal(await evaluate("!!document.querySelector('.option-item.correct,.option-item.wrong,.option-item.pending')"),false);
   const selectedOption=await evaluate("(()=>{const item=document.querySelector('.option-item');const range=document.createRange();range.selectNodeContents(item.lastElementChild);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);item.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1}));const result={text:selection.toString(),answer:currentQuestion().selectedIndex,pending:Boolean(state.answerPending),selectable:getComputedStyle(item).userSelect};selection.removeAllRanges();return result;})()");
   assert.ok(selectedOption.text);assert.equal(selectedOption.answer,null);assert.equal(selectedOption.pending,false);assert.equal(selectedOption.selectable,'text');
@@ -441,6 +444,8 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate('window.fetch=window.quizFetch');
   await evaluate("(async()=>{state.attempt=await api('/api/attempts',post({}));await showQuiz();window.manualChatFetch=window.fetch;window.manualChatPosts=0;window.fetch=(url,options)=>{if(String(url).endsWith('/chat')&&options?.method==='POST')window.manualChatPosts++;return window.manualChatFetch(url,options)};state.teacherEnabled=true;const questions=await api('/api/questions');const question=currentQuestion();const correct=questions.find(q=>q.id===question.id).answerIndex;await chooseAnswer((correct+1)%4);clearTimeout(state.transitionTimer);const position=state.attempt.currentIndex;await navigatePractice(position===0?1:0);await navigatePractice(position);})()");
   assert.equal(await evaluate('window.manualChatPosts'),0,'Wrong answer and revisiting must not request AI');
+  assert.equal(await evaluate('window.soundEvents.at(-1)'), 'wrong');
+  await evaluate('quizSound.play=window.soundPlay');
   await evaluate("quickChat('Explain this question')");
   assert.equal(await evaluate('window.manualChatPosts'),1,'Only an explicit question requests AI');
   await evaluate('window.fetch=window.manualChatFetch');
@@ -490,6 +495,7 @@ D. \(\int_0^1 x\,dx\)
   await evaluate('openQuestionFolder(window.folderId)');
   assert.equal(await evaluate("document.querySelectorAll('.library-set').length"),2);
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);
+  assert.ok(await evaluate("document.querySelector('.top-actions').getBoundingClientRect().right<=window.innerWidth"));
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.library-grid')).gridTemplateColumns.split(' ').length"),1);
   assert.ok(await evaluate("[...document.querySelectorAll('.library-card')].every(card=>card.getBoundingClientRect().right<=window.innerWidth)"));
   await send('Emulation.clearDeviceMetricsOverride',{},sessionId);

@@ -24,7 +24,7 @@
  <div class="side-bottom"><div class="user-mini"><div class="avatar" id="sideAvatar">G</div><div><b id="sideName">Khách học tập</b><div class="small muted" id="sideEmail">Chưa đăng nhập</div></div></div></div>
 </aside>
 <main class="main">
- <div class="topbar"><div class="crumb">FIT / <b id="view-title">Tổng quan</b></div><div class="top-actions"><span class="pill" id="badge-question-count">Đang tải…</span><button class="btn ghost" id="account-button" onclick="openLogin()">Đăng nhập Google</button><button class="btn primary" onclick="navigateTo('v-quiz')">▶ Bắt đầu học</button></div></div>
+ <div class="topbar"><div class="crumb">FIT / <b id="view-title">Tổng quan</b></div><div class="top-actions"><span class="pill" id="badge-question-count">Đang tải…</span><button class="btn ghost" id="sound-toggle" aria-label="Tắt âm thanh" aria-pressed="true" onclick="quizSound.toggle()">🔊</button><button class="btn ghost" id="account-button" onclick="openLogin()">Đăng nhập Google</button><button class="btn primary" onclick="navigateTo('v-quiz')">▶ Bắt đầu học</button></div></div>
 
  <section class="view-content page active" id="v-menu">
   <div class="hero">
@@ -147,6 +147,6 @@ D. Hải Phòng
 <dialog class="set-folder-dialog" id="move-set-dialog" aria-labelledby="move-set-title" onclose="movingSetId=null"><form onsubmit="moveSetToFolder(event)"><h2 id="move-set-title">Chuyển bộ câu hỏi</h2><p id="move-set-name"></p><label for="set-folder-target">Thư mục đích</label><select class="field" id="set-folder-target"></select><div class="dialog-actions"><button class="btn" type="button" onclick="document.querySelector('#move-set-dialog').close()">Hủy</button><button class="btn primary" id="move-set-save" type="submit">Chuyển bộ</button></div></form></dialog>
 <div class="toast" id="app-toast" role="status" aria-live="polite"></div>
 <link rel="stylesheet" href="/vendor/katex/katex.min.css">
-<script src="/vendor/katex/katex.min.js" defer></script><script src="/vendor/katex/contrib/mhchem.min.js" defer></script><script src="/vendor/katex/contrib/auto-render.min.js" defer></script><script src="/math-content.js" defer></script>
+<script src="/vendor/katex/katex.min.js" defer></script><script src="/vendor/katex/contrib/mhchem.min.js" defer></script><script src="/vendor/katex/contrib/auto-render.min.js" defer></script><script src="/math-content.js" defer></script><script src="/sounds.js" defer></script>
 <script src="/reference-app.js" defer></script><script src="/question-bank.js" defer></script><script src="/question-folders.js" defer></script><script src="/feedback.js" defer></script><script src="/redesign.js" defer></script><script src="/import-guide.js" defer></script><script src="/textbook-guide.js" defer></script>
 </body></html>

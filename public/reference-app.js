@@ -400,6 +400,7 @@ async function chooseAnswer(index) {
     state.savedCursor={id:attemptId,index:saved.currentIndex};state.answerPending=null;
     renderActiveQuestion();
     appendMessageToChatWindow('system',saved.feedback.correct ? 'Chính xác!' : `Chưa đúng. Đáp án: ${letter(question.options.findIndex(option=>option.index===question.answerIndex))}.`);
+    window.quizSound?.play(saved.feedback.correct?'correct':'wrong');
     state.transitionTimer=window.setTimeout(()=>advancePractice(attemptId,question.id,run),saved.feedback.correct?350:650);
   } catch(error) {
     if (practiceRun!==run || state.attempt?.id!==attemptId) return;
