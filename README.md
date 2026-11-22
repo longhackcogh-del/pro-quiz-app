@@ -21,6 +21,14 @@
 
 HTML/CSS/JavaScript thuần → Express trên Node.js 24 → PostgreSQL (Neon) hoặc SQLite (`node:sqlite`) cho local. Google OAuth xác thực tài khoản; Gemini được tích hợp tại backend.
 
+### Bảo vệ backend
+
+- Tên công khai không dùng email làm giá trị dự phòng; phản hồi cũ có email trong tên cũng được che khi đọc.
+- Chống gửi dồn dập theo tài khoản: phản hồi tối đa 5 yêu cầu/phút; ba API AI dùng chung 20 yêu cầu/phút, mỗi tài khoản một yêu cầu AI đang xử lý, tối đa 4 yêu cầu AI đồng thời trên một server. Đây là bảo vệ chống lạm dụng, không phải quota gói trả phí. Trả `429`/`503` cùng `Retry-After` khi cần đợi.
+- AI chỉ nhận tối đa 120.000 ký tự mỗi lần gọi; ngữ cảnh chat lấy 20 tin gần nhất, lịch sử đầy đủ vẫn được lưu.
+- Chỉ đọc một tệp upload đồng thời. Giữ giới hạn file 10 MB; DOCX kiểm tra theo luồng tối đa 32 MB giải nén/2.000 mục, PDF tối đa 300 trang, văn bản trích xuất tối đa 12 MB. DOCX/PDF chạy trong tiến trình riêng với JS heap 128 MB, tối đa 15 giây; upload chưa hoàn tất bị ngắt sau 60 giây. Giới hạn JS heap không phải giới hạn toàn bộ bộ nhớ native của tiến trình.
+- Bộ chặn lưu trạng thái trong RAM của từng process; khởi động lại sẽ đặt lại cửa sổ giới hạn. Khi chạy nhiều server cần kho giới hạn dùng chung. Chưa phải giải pháp chống DDoS ở tầng mạng.
+
 ## Giao diện
 
 Ảnh chụp từ kiểm thử trình duyệt với dữ liệu và tài khoản mô phỏng.

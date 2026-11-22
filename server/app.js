@@ -2,8 +2,8 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const express = require('express');
 const multer = require('multer');
-const mammoth = require('mammoth');
-const { PDFParse } = require('pdf-parse');
+const {extractDocument}=require('./document-reader');
+const {workGuard}=require('./work-guard');
 if (require.main === module) {
   try { process.loadEnvFile(path.join(__dirname, '..', '.env')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
@@ -18,19 +18,21 @@ app.disable('x-powered-by');
 app.use(require('./security'));
 const port = Number(process.env.PORT) || 3000;
 const publicDirectory = path.join(__dirname, '..', 'public');
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024,files:1,fields:2,fieldSize:100*1024,parts:3 } });
+const protectAI=workGuard({requests:20,concurrency:4});
+const protectUpload=workGuard({concurrency:1});
 
 app.get('/ping', (_req,res) => res.set('Cache-Control','no-store').type('text/plain').send('OK'));
 app.get('/healthz', async (_req,res) => {
   try { (await db.prepare('SELECT 1').get()); res.json({status:'ok'}); }
   catch { res.status(503).json({status:'unavailable'}); }
 });
-app.use(express.json({ limit: '10mb' }));
 app.use(require('./google-auth').createGoogleAuth());
 app.use('/api', (req,res,next) => {
   if (['/ai/status','/integrations/pdf'].includes(req.path) || (req.method==='GET' && req.path==='/feedback')) return next();
   return requireAccount(req,res,next);
 });
+app.use(express.json({ limit: '10mb' }));
 app.get('/index.html', (_req, res) => res.redirect('/'));
 app.use(express.static(publicDirectory, { index: false }));
 app.use('/vendor/katex',express.static(path.join(path.dirname(require.resolve('katex/package.json')),'dist')));
@@ -66,6 +68,7 @@ function aiConfig() {
 
 let lastAIConnectionAt = null;
 async function generateAI(messages, { jsonMode = false, maxTokens = 500 } = {}) {
+  if(messages.reduce((total,message)=>total+message.content.length,0)>120000)throw Object.assign(new Error('Nội dung gửi AI quá dài. Hãy chia nhỏ tài liệu hoặc bắt đầu lượt hỏi mới.'),{status:413});
   const config = aiConfig();
   if (!config) throw new Error('Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.');
   if (config.provider === 'Gemini') {
@@ -211,26 +214,30 @@ app.post('/api/imports/preview', async (req, res) => {
   res.json({ ...parsed, aiAvailable: Boolean(aiConfig()), aiMessage: aiConfig() ? null : 'Chưa kết nối AI. Câu có đáp án nguồn vẫn được nhận diện chính xác.' });
 });
 
-app.post('/api/imports/file', upload.single('file'), async (req, res) => {
+app.post('/api/imports/file', protectUpload(async (req, res) => {
+  await new Promise((resolve,reject)=>{
+    let done=false;
+    const finish=error=>{if(done)return;done=true;clearTimeout(timer);req.off('aborted',aborted);error?reject(error):resolve();};
+    const aborted=()=>finish(Object.assign(new Error('Tải tệp đã bị hủy.'),{status:400}));
+    const timer=setTimeout(()=>{finish(Object.assign(new Error('Tải tệp quá thời gian cho phép.'),{status:408}));req.destroy();},60000);
+    req.once('aborted',aborted);if(req.aborted)return aborted();
+    upload.single('file')(req,res,finish);
+  });
   if (!req.file) return res.status(400).json({ error: 'Chưa chọn tệp đề.' });
   const extension = path.extname(req.file.originalname).toLowerCase();
   try {
     let text;
     if (extension === '.txt') text = req.file.buffer.toString('utf8');
-    else if (extension === '.docx') text = (await mammoth.extractRawText({ buffer: req.file.buffer })).value;
-    else if (extension === '.pdf') {
-      const parser = new PDFParse({ data: req.file.buffer });
-      text = (await parser.getText()).text;
-      await parser.destroy();
-    } else return res.status(415).json({ error: 'Chỉ hỗ trợ TXT, DOCX và PDF có văn bản.' });
+    else if (extension === '.docx'||extension === '.pdf') text=await extractDocument(req.file.buffer,extension);
+    else return res.status(415).json({ error: 'Chỉ hỗ trợ TXT, DOCX và PDF có văn bản.' });
     if (!text.trim()) return res.status(422).json({ error: 'Không tìm thấy văn bản trong tệp.' });
     res.json({ text, fileName: req.file.originalname });
   } catch (error) {
-    res.status(422).json({ error: `Không thể đọc tệp: ${error.message}` });
+    res.status(error.status||422).json({ error: error.status?error.message:'Không thể đọc tệp. Hãy kiểm tra định dạng và thử lại.' });
   }
-});
+}));
 
-app.post('/api/imports/ai-preview', async (req, res) => {
+app.post('/api/imports/ai-preview', protectAI(async (req, res) => {
   const parsed = Array.isArray(req.body.questions)
     ? { questions: req.body.questions, invalid: [], totalBlocks: req.body.questions.length }
     : parseQuizText(req.body.text);
@@ -247,9 +254,9 @@ app.post('/api/imports/ai-preview', async (req, res) => {
     const byId = new Map(suggested.map((question) => [question.id, question]));
     res.json({ ...parsed, questions: questions.map((question) => byId.get(question.id) || question), aiMessage: 'AI đề xuất — chưa xác nhận. Đọc giải thích, sửa nếu cần và xác nhận từng câu trước khi chấm điểm.' });
   } catch (error) {
-    res.status(502).json({ error: error.message || 'AI trả về dữ liệu không hợp lệ. Hãy thử lại.' });
+    res.status(error.status||502).json({ error: error.message || 'AI trả về dữ liệu không hợp lệ. Hãy thử lại.' });
   }
-});
+}));
 
 app.post('/api/questions/import', async (req, res) => {
   const parsed = Array.isArray(req.body.questions)
@@ -363,7 +370,7 @@ app.patch('/api/questions/:id/content', async (req, res) => {
   res.json((await getQuestion(question.id)));
 });
 
-app.post('/api/questions/:id/ai-suggest', async (req, res) => {
+app.post('/api/questions/:id/ai-suggest', protectAI(async (req, res) => {
   const question = (await getQuestion(req.params.id));
   if (!question) return res.status(404).json({ error: 'Không tìm thấy câu hỏi.' });
   if (!aiConfig()) return res.status(503).json({ error: 'Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.' });
@@ -374,8 +381,8 @@ app.post('/api/questions/:id/ai-suggest', async (req, res) => {
     if (!current || current.prompt !== question.prompt || JSON.stringify(current.options) !== JSON.stringify(question.options)) return res.status(409).json({ error: 'Câu hỏi đã thay đổi trong khi AI phân tích. Hãy thử lại.' });
     (await db.prepare("UPDATE questions SET ai_suggestion_index = ?, ai_suggestion_reason = ?, answer_source = CASE WHEN answer_status = 'confirmed' THEN answer_source ELSE 'ai_suggestion' END, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(suggestion.aiSuggestionIndex, suggestion.aiSuggestionReason, question.id));
     res.json({ ...(await getQuestion(question.id)), needsReview: suggestion.needsReview });
-  } catch (error) { res.status(502).json({ error: error.message }); }
-});
+  } catch (error) { res.status(error.status||502).json({ error: error.message }); }
+}));
 
 app.delete('/api/questions/all', async (_req, res) => {
   await db.transaction(async () => {
@@ -523,7 +530,7 @@ app.get('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res) 
   res.json(messages);
 });
 
-app.post('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res) => {
+app.post('/api/attempts/:attemptId/questions/:questionId/chat', protectAI(async (req, res) => {
   if (process.env.QUIZ_TEACHER_ENABLED !== 'true') return res.status(403).json({ error: 'Giáo viên AI đang tạm khóa.' });
   const message = typeof req.body.message === 'string' ? req.body.message.trim().slice(0, 1000) : '';
   const question = (await getQuestion(req.params.questionId));
@@ -532,7 +539,7 @@ app.post('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res)
   if (!message) return res.status(400).json({ error: 'Hãy nhập câu hỏi cho AI.' });
   if (!aiConfig()) return res.status(503).json({ error: 'Chưa kết nối AI: hãy cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trong .env rồi khởi động lại server.' });
 
-  const history = (await db.prepare('SELECT role, content FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id').all(attempt.id, question.id));
+  const history = (await db.prepare('SELECT role, content FROM chat_messages WHERE attempt_id = ? AND question_id = ? ORDER BY id DESC LIMIT 20').all(attempt.id, question.id)).reverse();
   const system = 'Bạn là gia sư trắc nghiệm. Chỉ giải thích đúng câu hỏi được cung cấp, ưu tiên gợi ý trước khi tiết lộ đáp án. Trả lời bằng tiếng Việt, giữ nguyên nội dung tiếng Anh nếu cần.';
   const order = json(attempt.option_orders, {})[question.id] || [0, 1, 2, 3];
   const selectedIndex = json(attempt.answers, {})[question.id];
@@ -541,16 +548,19 @@ app.post('/api/attempts/:attemptId/questions/:questionId/chat', async (req, res)
   const userContext = `Câu hỏi: ${question.prompt}\n${order.map((optionIndex, index) => `${answerLabel(index)}. ${question.options[optionIndex]}`).join('\n')}\nTrạng thái bài: ${attempt.status}\nTrạng thái đáp án: ${question.answerStatus}\nĐáp án đã xác nhận: ${question.answerStatus === 'confirmed' && displayedAnswer >= 0 ? answerLabel(displayedAnswer) : 'Chưa xác nhận'}\nNgười học chọn: ${displayedSelection >= 0 ? answerLabel(displayedSelection) : 'Chưa chọn'}\nTrước khi người học chọn, ưu tiên gợi ý; sau khi chọn hoặc yêu cầu giải thích, dùng đáp án đã xác nhận. Không tự chốt đáp án chưa xác nhận.`;
   let reply;
   try { reply = await generateAI([{ role: 'system', content: `${system}\n\nNgữ cảnh câu hỏi đang học:\n${userContext}` }, ...history, { role: 'user', content: message }], { maxTokens: 500 }); }
-  catch (error) { return res.status(502).json({ error: error.message }); }
+  catch (error) { return res.status(error.status||502).json({ error: error.message }); }
   const save = db.prepare('INSERT INTO chat_messages (attempt_id, question_id, role, content) VALUES (?, ?, ?, ?)');
   (await save.run(attempt.id, question.id, 'user', message));
   (await save.run(attempt.id, question.id, 'assistant', reply));
   res.json({ role: 'assistant', content: reply });
-});
+}));
 
 app.use((req, res) => res.redirect('/'));
 app.use((error, _req, res, _next) => {
+  if(res.destroyed)return;
   if (error.type === 'entity.too.large' || error.code === 'LIMIT_FILE_SIZE') return res.status(413).json({error:'Dữ liệu vượt dung lượng 10 MB cho một lần nhập. Hãy chia tài liệu thành các phần nhỏ hơn.'});
+  if(error instanceof multer.MulterError || error.type==='entity.parse.failed')return res.status(400).json({error:'Dữ liệu gửi lên không hợp lệ. Hãy chọn một tệp và thử lại.'});
+  if(error.status===400||error.status===408)return res.status(error.status).json({error:'Tải tệp bị hủy hoặc quá thời gian. Hãy thử lại.'});
   console.error('Request failed.', /^[A-Z0-9]{5}$/.test(error.code || '') ? error.code : '');
   res.status(500).json({error:'Không thể xử lý yêu cầu. Vui lòng thử lại.'});
 });

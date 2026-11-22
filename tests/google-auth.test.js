@@ -7,13 +7,14 @@ test('Google OAuth: missing config, state/PKCE, verified identity, cookie sessio
   const env = {};
   let fail = false;
   let verified = true;
+  let profileName='Test User';
   let time = Date.now();
   const requests = [];
   const app = express();
   app.use(createGoogleAuth({ env, now: () => time, request: async (url, options) => {
     requests.push({url, options});
     if (fail) return {ok:false};
-    return {ok:true, json:async () => url.endsWith('/token') ? {access_token:'test-token'} : {sub:'google-test-user',email:'test@example.com',name:'Test User',email_verified:verified}};
+    return {ok:true, json:async () => url.endsWith('/token') ? {access_token:'test-token'} : {sub:'google-test-user',email:'test@example.com',name:profileName,email_verified:verified}};
   }}));
   app.get('/public-check', (_req,res) => res.send('public'));
   const server = app.listen(0, '127.0.0.1');
@@ -86,11 +87,14 @@ test('Google OAuth: missing config, state/PKCE, verified identity, cookie sessio
   assert.equal(response.headers.get('location'),'/?auth=invalid_state');
   assert.equal(requests.length,beforeExpiry);
   fail=false; verified=true;
+  profileName=undefined;
   response = await request('/auth/google');
   const validState = new URL(response.headers.get('location')).searchParams.get('state');
   const validCookie = response.headers.get('set-cookie').split(';')[0];
   response = await request(`/auth/google/callback?code=test&state=${validState}`,{headers:{cookie:validCookie}});
   const newSession = response.headers.getSetCookie().find(value=>value.startsWith('quiz_session=')).split(';')[0];
+  const noName=await(await request('/api/auth/status',{headers:{cookie:newSession}})).json();
+  assert.equal(noName.user.name,'Người học');assert.equal(noName.user.email,'test@example.com');
   time += 8*60*60*1000+1;
   response = await request('/api/auth/status',{headers:{cookie:newSession}});
   assert.equal((await response.json()).user,null);

@@ -1,5 +1,6 @@
 const { randomBytes, createHash } = require('node:crypto');
 const express = require('express');
+const {publicName}=require('./public-name');
 
 // Identity sessions are server-side; the Google subject is the stable owner ID.
 function createGoogleAuth({ env = process.env, request = fetch, now = Date.now } = {}) {
@@ -71,7 +72,7 @@ function createGoogleAuth({ env = process.env, request = fetch, now = Date.now }
       const sessionId = randomBytes(32).toString('base64url');
       const previous = cookies(req).quiz_session;
       if (previous) sessions.delete(previous);
-      sessions.set(sessionId, { user: { id: profile.sub, name: String(profile.name || profile.email).slice(0, 150), email: profile.email.slice(0, 254) }, expires: now() + 8 * 60 * 60 * 1000 });
+      sessions.set(sessionId, { user: { id: profile.sub, name: publicName(profile.name), email: profile.email.slice(0, 254) }, expires: now() + 8 * 60 * 60 * 1000 });
       res.cookie('quiz_session', sessionId, options(8 * 60 * 60 * 1000));
       res.redirect('/?auth=success');
     } catch { res.redirect('/?auth=failed'); }
