@@ -205,12 +205,35 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate('window.beforeSetPractice=state.attempt; practiceQuestionSet()');
   assert.equal(await evaluate('state.attempt.total'),1);
   assert.equal(await evaluate("document.querySelector('#practiceSubject').textContent"),'Chapter 1');
-  assert.equal(await evaluate("document.querySelector('#practice-set-select').value"),String(await evaluate('questionSets[0].id')));
+  assert.equal(await evaluate("document.querySelector('#practice-picker-button').textContent"),'Chapter 1');
   assert.equal(await evaluate("document.querySelector('#v-quiz .practice-focus')"),null);
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.practice-layout')).gridTemplateColumns.split(' ').length"),1);
-  await evaluate("window.confirm=()=>true; createNewPractice()");
+  await evaluate("window.confirm=()=>{throw Error('Native confirm must not be used for practice')};createNewPractice()");
+  assert.equal(await evaluate("document.querySelector('#practice-picker-dialog').open"),true);
+  await evaluate('startSelectedPractice()');
   assert.equal(await evaluate('state.attempt.total'),1);
   assert.equal(await evaluate("document.querySelector('#practiceSubject').textContent"),'Chapter 1');
+  await evaluate("window.resumeId=state.attempt.id;setView('v-list');window.resumeTask=startQuizSession();undefined");
+  await until("document.querySelector('#practice-decision').open");
+  if(process.env.PRO_QUIZ_PRACTICE_SCREENSHOT){
+    const screenshot=await send('Page.captureScreenshot',{format:'png'},sessionId);
+    fs.writeFileSync(process.env.PRO_QUIZ_PRACTICE_SCREENSHOT.replace(/\.png$/,'-resume.png'),Buffer.from(screenshot.data,'base64'));
+  }
+  await evaluate("document.querySelector('#practice-decision-accept').click();window.resumeTask");
+  assert.equal(await evaluate('state.attempt.id'),await evaluate('window.resumeId'));
+  assert.equal(await evaluate('state.view'),'v-quiz');
+  await evaluate("setView('v-list');window.resumeTask=startQuizSession();undefined");
+  await until("document.querySelector('#practice-decision').open");
+  await evaluate("document.querySelector('#practice-decision').close('dismiss');window.resumeTask");
+  assert.equal(await evaluate('state.view'),'v-list');
+  await evaluate("window.resumeTask=startQuizSession();undefined");
+  await until("document.querySelector('#practice-decision').open");
+  await evaluate("document.querySelector('#practice-decision-alternative').click();window.resumeTask");
+  assert.equal(await evaluate("document.querySelector('#practice-picker-dialog').open"),true);
+  assert.equal(await evaluate("document.querySelector('#practice-selection-start').disabled"),false);
+  await evaluate("document.querySelector('#practice-picker-dialog').close();window.confirm=()=>true");
+  assert.equal(await evaluate("formatQuizDate('2026-11-23T10:00:00.000Z')===formatQuizDate('2026-11-23 10:00:00')"),true);
+  assert.equal(await evaluate("formatQuizDate('invalid')"),'—');
   await evaluate('state.attempt=window.beforeSetPractice; openViewQuestions()');
   await evaluate("window.prompt=()=> 'Renamed chapter'; renameQuestionSet()");
   assert.equal(await evaluate('selectedQuestionSet().name'),'Renamed chapter');
@@ -485,6 +508,12 @@ D. \(\int_0^1 x\,dx\)
   await evaluate("window.folderUnitId=Number(document.querySelector('#question-set-filter').value);window.folderId=bankFolder;toggleQuestionSelection(state.questions[0].id,true);document.querySelector('#question-set-target').value=String(window.folderUnitId);moveSelectedQuestions()");
   assert.equal(await evaluate('filteredBankQuestions().length'),1);
   await evaluate("window.prompt=()=> 'Unit 8 - phần 2';createQuestionSet()");
+  await evaluate("window.emptyPracticeId=Number(document.querySelector('#question-set-filter').value);openPracticePicker()");
+  await evaluate("clearPracticeSelection();togglePracticeSet(String(window.emptyPracticeId),true);startSelectedPractice()");
+  assert.equal(await evaluate("document.querySelector('#practice-picker-dialog').open"),true);
+  assert.ok(await evaluate("document.querySelector('#practice-picker-status').textContent.includes('chưa có câu hỏi')"));
+  await evaluate("document.querySelector('#practice-picker-dialog').close()");
+  await evaluate("window.folderUnitTwo=Number(document.querySelector('#question-set-filter').value);const question=state.questions.find(q=>q.answerStatus==='confirmed'&&q.setId!==window.folderUnitId);toggleQuestionSelection(question.id,true);document.querySelector('#question-set-target').value=String(window.folderUnitTwo);moveSelectedQuestions()");
   await evaluate('openQuestionFolder(null)');
   assert.equal(await evaluate("document.querySelectorAll('.library-folder').length"),1);
   if(process.env.PRO_QUIZ_FOLDER_SCREENSHOT){
@@ -494,7 +523,24 @@ D. \(\int_0^1 x\,dx\)
   }
   await evaluate('openQuestionFolder(window.folderId)');
   assert.equal(await evaluate("document.querySelectorAll('.library-set').length"),2);
+  await evaluate("openPracticePicker()");
+  await evaluate("clearPracticeSelection();document.querySelector('#practice-set-search').value='tieng anh';renderPracticeChoices();for(const id of [window.folderUnitId,window.folderUnitTwo]){const checkbox=document.querySelector('#practice-set-tree input[value=\"'+id+'\"]');checkbox.checked=true;checkbox.dispatchEvent(new Event('change',{bubbles:true}));}");
+  assert.equal(await evaluate("document.querySelectorAll('#practice-set-tree input:checked').length"),2);
+  assert.equal(await evaluate("document.querySelector('#practice-selection-count').textContent"),'Đã chọn 2 bộ');
+  await evaluate("document.querySelector('#practice-set-search').value='no matching set';renderPracticeChoices()");
+  assert.equal(await evaluate('practiceDraft.size'),2);
+  await evaluate("document.querySelector('#practice-set-search').value='tieng anh';renderPracticeChoices()");
+  if(process.env.PRO_QUIZ_PRACTICE_SCREENSHOT){
+    const screenshot=await send('Page.captureScreenshot',{format:'png'},sessionId);
+    fs.writeFileSync(process.env.PRO_QUIZ_PRACTICE_SCREENSHOT,Buffer.from(screenshot.data,'base64'));
+  }
   await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);
+  assert.ok(await evaluate("document.querySelector('#practice-picker-dialog').getBoundingClientRect().right<=window.innerWidth"));
+  assert.ok(await evaluate("document.querySelector('#practice-selection-start').getBoundingClientRect().right<=window.innerWidth"));
+  await evaluate('startSelectedPractice()');
+  assert.equal(await evaluate('state.attempt.total'),2);
+  assert.equal(await evaluate("document.querySelector('#practice-picker-button').textContent"),'2 bộ câu hỏi');
+  await evaluate('openViewQuestions();');
   assert.ok(await evaluate("document.querySelector('.top-actions').getBoundingClientRect().right<=window.innerWidth"));
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.library-grid')).gridTemplateColumns.split(' ').length"),1);
   assert.ok(await evaluate("[...document.querySelectorAll('.library-card')].every(card=>card.getBoundingClientRect().right<=window.innerWidth)"));

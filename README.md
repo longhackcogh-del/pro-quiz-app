@@ -13,6 +13,7 @@
 - Thư mục riêng theo môn/chủ đề chứa nhiều bộ câu hỏi; giao diện thẻ, chuyển bộ vào/ra thư mục. Xóa thư mục giữ lại các bộ và câu hỏi. Bộ cũ mặc định nằm ngoài thư mục; hỗ trợ một tầng thư mục → bộ → câu hỏi.
 - Nhập TXT, DOCX, PDF có lớp văn bản; xem trước và chỉnh sửa trước khi lưu.
 - Chấm điểm, lưu tiến trình, kết quả và lịch sử câu sai.
+- Chọn bài bằng danh sách thư mục có tìm kiếm và checkbox, luyện một hoặc nhiều bộ trong cùng bài. Hộp thoại tiếp tục bài/lưu thoát dùng giao diện trong web; đóng hộp thoại không tự tạo lượt mới.
 - Âm thao tác và âm đúng/sai bằng Web Audio; nút 🔊/🔇 lưu tùy chọn trên trình duyệt. Chỉ phát kết quả sau xác nhận server, không phát khi tải trang hoặc mất mạng.
 - Hai hướng dẫn dùng Gemini bên ngoài để chuẩn hóa câu hỏi hoặc tạo đề theo chương giáo trình.
 - Giáo viên AI dạng bong bóng, hiện **tạm khóa**. API key chỉ dùng ở backend.

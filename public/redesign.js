@@ -29,21 +29,7 @@ function quickChat(message) {
 }
 function filterQuestionBank() { bankPage = 1; renderBank(); }
 async function createNewPractice() {
-  if (state.busy || state.practiceLoading) return;
-  const selected=$('#practice-set-select');
-  const set=selected.value,name=selected.selectedOptions[0].textContent;
-  if (!window.confirm(`Bắt đầu lượt mới: ${name}? Tiến trình lượt hiện tại vẫn được lưu.`)) return;
-  state.practiceLoading=true;
-  try {
-    let payload={};
-    if(set!=='all') {
-      const questions=await api('/api/questions');
-      const questionIds=questions.filter(q=>(set==='none'?q.setId==null:q.setId===Number(set))&&q.answerStatus==='confirmed').map(q=>q.id);
-      if(!questionIds.length)return toast('Bộ này chưa có câu hỏi đã xác nhận đáp án.');
-      payload={questionIds};
-    }
-    state.attempt=await api('/api/attempts',post(payload));await showQuiz();
-  } catch(error) {showError(error);} finally {state.practiceLoading=false;}
+  return openPracticePicker();
 }
 async function practiceAllWrong() {
   try {
@@ -105,7 +91,7 @@ refreshHeader = async function() {
   $('#recent-attempts').innerHTML = dashboard.recent.length ? dashboard.recent.map(attempt => {
     const completed = attempt.status === 'completed';
     const progress = attempt.total ? Math.round((completed ? attempt.total : attempt.answered) * 100 / attempt.total) : 0;
-    return `<div class="row-item"><div class="stat-icon">${completed ? '✓' : '▷'}</div><div class="grow"><b>Lượt luyện tập #${attempt.id}</b><small>${attempt.total} câu · ${new Date(attempt.updatedAt.replace(' ','T')+'Z').toLocaleString('vi-VN')}</small><div class="progress"><i style="width:${progress}%"></i></div></div><button class="btn ${completed ? '' : 'primary'}" onclick="resumeAttempt(${attempt.id})">${completed ? `Kết quả ${attempt.score}/${attempt.total}` : 'Tiếp tục'}</button></div>`;
+    return `<div class="row-item"><div class="stat-icon">${completed ? '✓' : '▷'}</div><div class="grow"><b>Lượt luyện tập #${attempt.id}</b><small>${attempt.total} câu · ${formatQuizDate(attempt.updatedAt)}</small><div class="progress"><i style="width:${progress}%"></i></div></div><button class="btn ${completed ? '' : 'primary'}" onclick="resumeAttempt(${attempt.id})">${completed ? `Kết quả ${attempt.score}/${attempt.total}` : 'Tiếp tục'}</button></div>`;
   }).join('') : '<p class="empty">Chưa có lượt luyện tập. Nhập câu hỏi và bắt đầu hành trình của bạn.</p>';
 };
 const originalRenderQuestion = renderActiveQuestion;
@@ -136,6 +122,7 @@ function loginFeedback(message) {
 }
 function resetAccountData(accountId) {
   resetPracticeInteraction();
+  resetPracticePicker();
   state.practiceLoading=null;
   questionSets=[];questionFolders=[];bankFolder=null;renderQuestionSets();
   if($('#move-set-dialog').open)$('#move-set-dialog').close();

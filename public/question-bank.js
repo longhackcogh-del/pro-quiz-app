@@ -171,12 +171,13 @@ async function loadQuestionSets() {
   renderQuestionSets();
 }
 function renderQuestionSets() {
-  for (const id of ['question-set-filter','question-set-target','practice-set-select']) {
+  for (const id of ['question-set-filter','question-set-target']) {
     const select=$('#'+id), value=select.value;
     select.innerHTML=(id!=='question-set-target' ? '<option value="all">Tất cả bộ câu hỏi</option>' : '')+'<option value="none">Chưa phân loại</option>'+questionSets.map(set=>{const folder=questionFolders.find(folder=>folder.id===set.folderId);return `<option value="${set.id}">${escapeHtml((folder?folder.name+' / ':'')+set.name)} (${set.questionCount})</option>`;}).join('');
     if ([...select.options].some(option=>option.value===value)) select.value=value;
   }
   renderFolderLibrary();
+  refreshPracticeChoices();
 }
 async function createQuestionSet() {
   const name=window.prompt('Tên bộ câu hỏi mới:');

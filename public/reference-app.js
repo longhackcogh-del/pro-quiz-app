@@ -303,27 +303,40 @@ async function openWrongLogView() {
     $('#scroller-wrong-list').innerHTML = wrong.length ? wrong.map((question) => {
       const divider = question.attemptId !== previousAttempt ? `<div class="turn-divider">▶ LƯỢT LÀM BÀI THỨ ${question.attemptId}${question.attemptStatus === 'in_progress' ? ' · ĐANG LÀM' : ''}</div>` : '';
       previousAttempt = question.attemptId;
-      return `${divider}<article class="question-card data-row"><span class="tag warn">CẦN ÔN</span><p>${escapeHtml(question.prompt)}</p><div class="options">${question.options.map((option, index) => `<div class="option ${index === question.answerIndex ? 'correct' : ''}">${letter(index)}. ${escapeHtml(option)}</div>`).join('')}</div><p class="small muted">Đáp án đúng: ${letter(question.answerIndex)} · Bạn chọn: ${letter(question.selectedIndex)} · ${new Date(question.wrongAt.replace(' ', 'T') + 'Z').toLocaleString('vi-VN')}</p></article>`;
+      return `${divider}<article class="question-card data-row"><span class="tag warn">CẦN ÔN</span><p>${escapeHtml(question.prompt)}</p><div class="options">${question.options.map((option, index) => `<div class="option ${index === question.answerIndex ? 'correct' : ''}">${letter(index)}. ${escapeHtml(option)}</div>`).join('')}</div><p class="small muted">Đáp án đúng: ${letter(question.answerIndex)} · Bạn chọn: ${letter(question.selectedIndex)} · ${formatQuizDate(question.wrongAt)}</p></article>`;
     }).join('') : '<div class="empty">Chưa có câu trả lời sai để ôn. Câu sai sẽ xuất hiện tại đây ngay sau khi bạn chọn đáp án, kể cả khi chưa nộp bài.</div>';
     renderFormulaContent($('#scroller-wrong-list'));
     setView('v-wrong');
   } catch (error) { showError(error); }
 }
+function formatQuizDate(value) {
+  if(!value)return '—';
+  const raw=String(value);const date=new Date(raw.includes('T')?raw:raw.replace(' ','T')+'Z');
+  return Number.isNaN(date.getTime())?'—':date.toLocaleString('vi-VN');
+}
 function exportDataToTxt() { window.location.href = '/api/questions/export'; }
 function exportWrongLogToTxt() { window.location.href = '/api/wrong-answers/export'; }
 async function startQuizSession(questionIds = null) {
-  if (state.practiceLoading) return;
+  if (state.practiceLoading||state.answerPending||state.submitting||state.navigationPending) return;
+  if(state.view==='v-quiz' && !questionIds)return openPracticePicker();
   const load={};state.practiceLoading=load;
+  const epoch=accountEpoch;
   const trigger=document.activeElement;
   const contents=trigger instanceof HTMLButtonElement ? [...trigger.childNodes] : null;
   if (contents) {trigger.disabled=true;trigger.textContent='Đang mở bài…';}
   try {
     const active = await api('/api/attempts/active');
-    if (active && active.status === 'in_progress' && window.confirm('Phát hiện một lượt làm bài đang dở. Bạn có muốn làm tiếp không?')) state.attempt = active;
-    else state.attempt = await api('/api/attempts', post(questionIds ? { questionIds } : {}));
-    await showQuiz();
+    if(active?.status==='in_progress'){
+      const answered=active.questions.filter(question=>Number.isInteger(question.selectedIndex)).length;
+      const decision=await askPracticeDecision({title:'Tiếp tục bài đang dở?',detail:`Bạn đã trả lời ${answered}/${active.total} câu. Tiến trình đã được lưu, bạn có thể tiếp tục hoặc chọn bộ khác.`,accept:'Tiếp tục bài',alternative:'Chọn bộ khác'});
+      if(epoch!==accountEpoch||state.practiceLoading!==load||!decision)return;
+      if(decision==='accept'){state.attempt=active;await showQuiz();return;}
+      practiceSelection=selectionFromAttempt(active);
+    }
+    if(questionIds){state.attempt=await api('/api/attempts',post({questionIds}));await showQuiz();}
+    else await openPracticePicker();
   } catch (error) { showError(error); }
-  finally {if(state.practiceLoading===load)state.practiceLoading=null;if(contents){trigger.replaceChildren(...contents);trigger.disabled=false;}}
+  finally {if(state.practiceLoading===load){state.practiceLoading=null;updatePracticeDraft();}if(contents){trigger.replaceChildren(...contents);trigger.disabled=false;}}
 }
 let practiceRun=0;
 let pendingAnswerSave=null;
@@ -340,9 +353,7 @@ function resetPracticeInteraction() {
 async function showQuiz() {
   resetPracticeInteraction();
   await loadQuestionSets();
-  const sets=new Set(state.attempt.questions.map(q=>q.setId??null));
-  const selectedSet=sets.size===1 ? [...sets][0] : undefined;
-  $('#practice-set-select').value=sets.size>1?'all':selectedSet==null?'none':String(selectedSet);
+  practiceSelection=selectionFromAttempt(state.attempt);updatePracticeSelectionLabel();
   state.savedCursor={id:state.attempt.id,index:state.attempt.currentIndex};
   setView('v-quiz');renderActiveQuestion();await loadChatForCurrentQuestion();
 }
@@ -401,7 +412,8 @@ async function chooseAnswer(index) {
     renderActiveQuestion();
     appendMessageToChatWindow('system',saved.feedback.correct ? 'Chính xác!' : `Chưa đúng. Đáp án: ${letter(question.options.findIndex(option=>option.index===question.answerIndex))}.`);
     window.quizSound?.play(saved.feedback.correct?'correct':'wrong');
-    state.transitionTimer=window.setTimeout(()=>advancePractice(attemptId,question.id,run),saved.feedback.correct?350:650);
+    if(!$('#practice-picker-dialog').open&&!$('#practice-decision').open)state.transitionTimer=window.setTimeout(()=>advancePractice(attemptId,question.id,run),saved.feedback.correct?350:650);
+    else {state.busy=false;renderActiveQuestion();}
   } catch(error) {
     if (practiceRun!==run || state.attempt?.id!==attemptId) return;
     state.answerPending=null;state.busy=false;
@@ -445,7 +457,12 @@ async function handleQuizPrev() {
   await navigatePractice(state.attempt.currentIndex-1);
 }
 async function abortQuizSession() {
-  if(!window.confirm('Lưu tiến trình và thoát luyện tập?'))return;
+  if(state.submitting)return;
+  window.clearTimeout(state.transitionTimer);
+  if(!state.answerPending){state.busy=false;renderActiveQuestion();}
+  const epoch=accountEpoch;
+  const decision=await askPracticeDecision({title:'Lưu và thoát luyện tập?',detail:'Các đáp án đã được xác nhận sẽ được giữ lại để bạn tiếp tục sau.',accept:'Lưu & thoát',alternative:'Ở lại luyện tập'});
+  if(decision!=='accept'||epoch!==accountEpoch)return;
   if(pendingAnswerSave){try{await pendingAnswerSave;}catch{return;}}
   backToMenu();
 }
