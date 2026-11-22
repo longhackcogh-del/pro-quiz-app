@@ -473,6 +473,39 @@ D. \(\int_0^1 x\,dx\)
   await evaluate("document.querySelector('[data-answer]').value='1';document.querySelector('[data-answer]').dispatchEvent(new Event('change'));changeImportPreviewPage(3);changeImportPreviewPage(2)");
   assert.equal(await evaluate("document.querySelector('[data-answer]').value"),'1');
   assert.equal(await evaluate('collectPreview().length'),5000);
+  await evaluate("openViewQuestions()");
+  await evaluate("window.prompt=()=> 'Tiếng Anh';createQuestionFolder()");
+  assert.equal(await evaluate("document.querySelector('#folder-current').textContent"),'Tiếng Anh');
+  await evaluate("window.prompt=()=> 'Unit 8 - phần 1';createQuestionSet()");
+  await evaluate("window.folderUnitId=Number(document.querySelector('#question-set-filter').value);window.folderId=bankFolder;toggleQuestionSelection(state.questions[0].id,true);document.querySelector('#question-set-target').value=String(window.folderUnitId);moveSelectedQuestions()");
+  assert.equal(await evaluate('filteredBankQuestions().length'),1);
+  await evaluate("window.prompt=()=> 'Unit 8 - phần 2';createQuestionSet()");
+  await evaluate('openQuestionFolder(null)');
+  assert.equal(await evaluate("document.querySelectorAll('.library-folder').length"),1);
+  if(process.env.PRO_QUIZ_FOLDER_SCREENSHOT){
+    await evaluate('document.fonts.ready');
+    const screenshot=await send('Page.captureScreenshot',{format:'png'},sessionId);
+    fs.writeFileSync(process.env.PRO_QUIZ_FOLDER_SCREENSHOT.replace(/\.png$/,'-root.png'),Buffer.from(screenshot.data,'base64'));
+  }
+  await evaluate('openQuestionFolder(window.folderId)');
+  assert.equal(await evaluate("document.querySelectorAll('.library-set').length"),2);
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.library-grid')).gridTemplateColumns.split(' ').length"),1);
+  assert.ok(await evaluate("[...document.querySelectorAll('.library-card')].every(card=>card.getBoundingClientRect().right<=window.innerWidth)"));
+  await send('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  if(process.env.PRO_QUIZ_FOLDER_SCREENSHOT){
+    await evaluate('document.fonts.ready');
+    const screenshot=await send('Page.captureScreenshot',{format:'png'},sessionId);
+    fs.writeFileSync(process.env.PRO_QUIZ_FOLDER_SCREENSHOT,Buffer.from(screenshot.data,'base64'));
+  }
+  await evaluate('openSetFolderDialog(window.folderUnitId)');
+  await evaluate("document.querySelector('#set-folder-target').value='none';moveSetToFolder({preventDefault(){}})");
+  assert.equal(await evaluate('questionSets.find(set=>set.id===window.folderUnitId).folderId'),null);
+  await evaluate("openQuestionFolder(window.folderId);window.prompt=()=> 'English renamed';renameQuestionFolder()");
+  assert.equal(await evaluate("document.querySelector('#folder-current').textContent"),'English renamed');
+  await evaluate("window.confirm=()=>true;deleteQuestionFolder()");
+  assert.equal(await evaluate('questionFolders.length'),0);
+  assert.ok(await evaluate('questionSets.some(set=>set.id===window.folderUnitId && set.questionCount===1)'));
   await evaluate('openFeedback()');
   await evaluate("document.querySelector('#feedback-content').value='<img src=x onerror=alert(1)> Góp ý giao diện';submitFeedback({preventDefault(){}})");
   assert.equal(await evaluate("document.querySelector('#feedback-content').value"),'');

@@ -20,6 +20,7 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
    await db.prepare('DELETE FROM attempts WHERE owner_id=?').run(owner);
    await db.prepare('DELETE FROM questions WHERE owner_id=?').run(owner);
    await db.prepare('DELETE FROM question_sets WHERE owner_id=?').run(owner);
+   await db.prepare('DELETE FROM question_folders WHERE owner_id=?').run(owner);
    await db.prepare('DELETE FROM users WHERE id=?').run(owner);
   }} finally {await db.close();}
  });
@@ -48,6 +49,14 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  assert.equal((await request(b,'/api/questions/'+q.id)).status,404);
  assert.deepEqual((await request(b,'/api/questions')).data,[]);
  const set=(await request(a,'/api/question-sets',{name:'Chapter 1'})).data;
+ const folder=(await request(a,'/api/question-folders',{name:'Course'})).data;
+ assert.ok(Number.isSafeInteger(folder.id));
+ assert.equal((await request(a,'/api/question-sets/'+set.id+'/folder',{folderId:folder.id},'PATCH')).status,200);
+ assert.equal((await request(a,'/api/question-sets')).data.find(item=>item.id===set.id).folderId,folder.id);
+ assert.deepEqual((await request(b,'/api/question-folders')).data,[]);
+ assert.equal((await request(b,'/api/question-sets',{name:'Foreign folder',folderId:folder.id})).status,404);
+ assert.equal((await request(a,'/api/question-folders/'+folder.id,{},'DELETE')).status,200);
+ assert.equal((await request(a,'/api/question-sets')).data.find(item=>item.id===set.id).folderId,null);
  assert.equal((await request(a,'/api/question-sets/contents/move',{questionIds:[q.id],setId:set.id},'PATCH')).status,200);
  assert.equal((await request(a,'/api/question-sets')).data[0].questionCount,1);
  assert.equal((await request(a,'/api/questions/'+q.id)).data.setId,set.id);

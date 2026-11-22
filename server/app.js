@@ -287,6 +287,7 @@ app.post('/api/questions/import', async (req, res) => {
 });
 
 app.use('/api/question-sets', require('./question-sets'));
+app.use('/api/question-folders', require('./question-folders'));
 
 app.get('/api/questions', async (_req, res) => {
   res.json(await getQuestions());

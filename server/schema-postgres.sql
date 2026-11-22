@@ -2,6 +2,10 @@
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS question_sets (id SERIAL PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100));
+CREATE TABLE IF NOT EXISTS question_folders (id SERIAL PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100));
+ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS folder_id INTEGER REFERENCES question_folders(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS question_folders_owner ON question_folders(owner_id);
+CREATE INDEX IF NOT EXISTS question_sets_folder ON question_sets(folder_id);
 CREATE TABLE IF NOT EXISTS questions (
  id SERIAL PRIMARY KEY, prompt TEXT NOT NULL, source_text TEXT NOT NULL,
  answer_index INTEGER, answer_status TEXT NOT NULL DEFAULT 'unconfirmed', answer_source TEXT NOT NULL DEFAULT 'not_provided',

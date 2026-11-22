@@ -1,0 +1,53 @@
+let movingSetId=null;
+function renderFolderLibrary(){
+  const folder=questionFolders.find(item=>item.id===bankFolder);
+  $('#folder-current').textContent=folder?.name||'Thư viện của tôi';
+  $('#folder-back').hidden=!folder;
+  $('#folder-rename').hidden=!folder;$('#folder-delete').hidden=!folder;
+  const sets=questionSets.filter(item=>(item.folderId??null)===bankFolder);
+  const folders=folder?[]:questionFolders;
+  $('#folder-library').innerHTML=folders.map(item=>{
+    const children=questionSets.filter(set=>set.folderId===item.id);
+    return `<button class="library-card library-folder" data-folder-id="${item.id}" onclick="openQuestionFolder(${item.id})"><span class="library-icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 7V5a2 2 0 0 1 2-2h4l3 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg></span><strong>${escapeHtml(item.name)}</strong><small>${children.length} bộ câu hỏi · ${children.reduce((total,set)=>total+set.questionCount,0)} câu</small><span class="library-open">Mở thư mục →</span></button>`;
+  }).join('')+sets.map(set=>`<article class="library-card library-set ${$('#question-set-filter').value===String(set.id)?'selected':''}" data-set-id="${set.id}"><span class="library-icon" aria-hidden="true">▤</span><strong>${escapeHtml(set.name)}</strong><small>${set.questionCount} câu hỏi</small><div class="library-card-actions"><button class="btn primary" onclick="openLibrarySet(${set.id})">Xem</button><button class="btn" onclick="practiceLibrarySet(${set.id})" aria-label="Luyện tập ${escapeHtml(set.name)}">▷ Học</button><button class="btn" onclick="openSetFolderDialog(${set.id})">Chuyển</button></div></article>`).join('');
+  if(!folders.length&&!sets.length)$('#folder-library').innerHTML=`<p class="library-empty muted">${folder?'Thư mục chưa có bộ câu hỏi. Tạo bộ mới tại đây hoặc chuyển bộ có sẵn vào.':'Tạo thư mục theo môn học, rồi thêm các bộ câu hỏi theo chương hoặc chủ đề.'}</p>`;
+}
+function openQuestionFolder(id){
+  bankFolder=id;$('#question-set-filter').value='all';bankSelected.clear();bankPage=1;
+  renderFolderLibrary();renderBank();
+}
+function openLibrarySet(id){
+  $('#question-set-filter').value=String(id);bankFilterChanged();
+  $('#scroller-questions-list').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function practiceLibrarySet(id){$('#question-set-filter').value=String(id);return practiceQuestionSet();}
+async function createQuestionFolder(){
+  const name=window.prompt('Tên thư mục mới (ví dụ: Tiếng Anh, Toán cao cấp):');if(!name?.trim())return;
+  try{const folder=await api('/api/question-folders',post({name}));await loadQuestionSets();openQuestionFolder(folder.id);}
+  catch(error){showError(error);}
+}
+async function renameQuestionFolder(){
+  const folder=questionFolders.find(item=>item.id===bankFolder);if(!folder)return;
+  const name=window.prompt('Đổi tên thư mục:',folder.name);if(!name?.trim())return;
+  try{await api('/api/question-folders/'+folder.id,{...post({name}),method:'PATCH'});await loadQuestionSets();}
+  catch(error){showError(error);}
+}
+async function deleteQuestionFolder(){
+  const folder=questionFolders.find(item=>item.id===bankFolder);if(!folder || !window.confirm(`Xóa thư mục “${folder.name}”? Các bộ và câu hỏi bên trong được giữ lại ở Thư viện của tôi.`))return;
+  try{await api('/api/question-folders/'+folder.id,{method:'DELETE'});bankFolder=null;await loadQuestionSets();openQuestionFolder(null);}
+  catch(error){showError(error);}
+}
+function openSetFolderDialog(id){
+  const set=questionSets.find(item=>item.id===id);if(!set)return;
+  movingSetId=id;$('#move-set-name').textContent=set.name;
+  $('#set-folder-target').innerHTML='<option value="none">Ngoài thư mục</option>'+questionFolders.map(folder=>`<option value="${folder.id}">${escapeHtml(folder.name)}</option>`).join('');
+  $('#set-folder-target').value=set.folderId==null?'none':String(set.folderId);
+  $('#move-set-dialog').showModal();
+}
+async function moveSetToFolder(event){
+  event.preventDefault();if(movingSetId===null)return;
+  const id=movingSetId,value=$('#set-folder-target').value,folderId=value==='none'?null:Number(value);
+  $('#move-set-save').disabled=true;
+  try{await api('/api/question-sets/'+id+'/folder',{...post({folderId}),method:'PATCH'});$('#move-set-dialog').close();bankFolder=folderId;await loadQuestionSets();$('#question-set-filter').value=String(id);bankFilterChanged();toast('Đã chuyển bộ câu hỏi.');}
+  catch(error){showError(error);}finally{$('#move-set-save').disabled=false;}
+}

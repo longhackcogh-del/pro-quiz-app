@@ -91,6 +91,9 @@ try {
   db.exec('COMMIT');
 } catch (error) { db.exec('ROLLBACK'); throw error; }
 
+db.exec(`CREATE TABLE IF NOT EXISTS question_folders (id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100)); CREATE INDEX IF NOT EXISTS question_folders_owner ON question_folders(owner_id);`);
+if(!db.prepare('PRAGMA table_info(question_sets)').all().some(column=>column.name==='folder_id'))db.exec('ALTER TABLE question_sets ADD COLUMN folder_id INTEGER REFERENCES question_folders(id) ON DELETE SET NULL');
+db.exec('CREATE INDEX IF NOT EXISTS question_sets_folder ON question_sets(folder_id)');
 db.exec(`CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   owner_id TEXT NOT NULL REFERENCES users(id),

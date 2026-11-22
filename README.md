@@ -10,6 +10,7 @@
 
 - Google OAuth với authorization code, PKCE và cookie phiên phía server.
 - Kho câu hỏi riêng: tạo/đổi tên/xóa bộ, chuyển câu hỏi và luyện tập từng bộ.
+- Thư mục riêng theo môn/chủ đề chứa nhiều bộ câu hỏi; giao diện thẻ, chuyển bộ vào/ra thư mục. Xóa thư mục giữ lại các bộ và câu hỏi. Bộ cũ mặc định nằm ngoài thư mục; hỗ trợ một tầng thư mục → bộ → câu hỏi.
 - Nhập TXT, DOCX, PDF có lớp văn bản; xem trước và chỉnh sửa trước khi lưu.
 - Chấm điểm, lưu tiến trình, kết quả và lịch sử câu sai.
 - Hai hướng dẫn dùng Gemini bên ngoài để chuẩn hóa câu hỏi hoặc tạo đề theo chương giáo trình.

@@ -137,7 +137,9 @@ function loginFeedback(message) {
 function resetAccountData(accountId) {
   resetPracticeInteraction();
   state.practiceLoading=null;
-  questionSets=[]; renderQuestionSets();
+  questionSets=[];questionFolders=[];bankFolder=null;renderQuestionSets();
+  if($('#move-set-dialog').open)$('#move-set-dialog').close();
+  movingSetId=null;$('#move-set-name').textContent='';$('#set-folder-target').replaceChildren();
   $('#question-set-filter').value='all';
   accountEpoch++;
   clearTimeout(state.transitionTimer);

@@ -1,4 +1,6 @@
 let questionSets = [];
+let questionFolders = [];
+let bankFolder = null;
 let bankPage = 1;
 const bankSelected = new Set();
 const bankAnswerDrafts = new Map();
@@ -12,7 +14,9 @@ function filteredBankQuestions() {
   const status = $('#bank-filter').value;
   const ascending = ['oldest','idAsc'].includes($('#bankSort').value);
   const set = $('#question-set-filter').value;
+  const folderSets=bankFolder===null?null:new Set(questionSets.filter(item=>item.folderId===bankFolder).map(item=>item.id));
   return state.questions.filter(question => {
+    if(folderSets && !folderSets.has(question.setId))return false;
     if (!(set === 'all' || (set === 'none' ? question.setId == null : question.setId === Number(set))) || !(status === 'all' || question.answerStatus === status)) return false;
     if (!term) return true;
     if (!bankSearchText.has(question)) bankSearchText.set(question,[question.id,question.prompt,...question.options].join(' ').toLocaleLowerCase('vi'));
@@ -69,7 +73,12 @@ function renderPageButtons(pages) {
 function setBankPage(page) { bankPage = page; renderBank(); }
 function jumpToPage() { setBankPage(Number($('#jumpPage').value) || 1); }
 function changePageSize() { bankPage = 1; renderBank(); }
-function bankFilterChanged() { bankPage = 1; renderBank(); }
+function bankFilterChanged() {
+  const value=$('#question-set-filter').value,set=questionSets.find(item=>String(item.id)===value);
+  if(set)bankFolder=set.folderId??null;
+  if(value==='none')bankFolder=null;
+  bankPage = 1;renderFolderLibrary();renderBank();
+}
 function clearBankSearch() { $('#bank-search').value = ''; bankFilterChanged(); }
 function toggleQuestionSelection(id,checked) { if (checked) bankSelected.add(id); else bankSelected.delete(id); renderBank(); }
 function toggleSelectPage(checked) { bankPageData().visible.forEach(question => { if (checked) bankSelected.add(question.id); else bankSelected.delete(question.id); }); renderBank(); }
@@ -156,20 +165,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadQuestionSets() {
-  questionSets = await api('/api/question-sets');
+  const [sets,folders]=await Promise.all([api('/api/question-sets'),api('/api/question-folders')]);
+  questionSets=sets;questionFolders=folders;
+  if(bankFolder!==null && !folders.some(folder=>folder.id===bankFolder))bankFolder=null;
   renderQuestionSets();
 }
 function renderQuestionSets() {
   for (const id of ['question-set-filter','question-set-target','practice-set-select']) {
     const select=$('#'+id), value=select.value;
-    select.innerHTML=(id!=='question-set-target' ? '<option value="all">Tất cả bộ câu hỏi</option>' : '')+'<option value="none">Chưa phân loại</option>'+questionSets.map(set=>`<option value="${set.id}">${escapeHtml(set.name)} (${set.questionCount})</option>`).join('');
+    select.innerHTML=(id!=='question-set-target' ? '<option value="all">Tất cả bộ câu hỏi</option>' : '')+'<option value="none">Chưa phân loại</option>'+questionSets.map(set=>{const folder=questionFolders.find(folder=>folder.id===set.folderId);return `<option value="${set.id}">${escapeHtml((folder?folder.name+' / ':'')+set.name)} (${set.questionCount})</option>`;}).join('');
     if ([...select.options].some(option=>option.value===value)) select.value=value;
   }
+  renderFolderLibrary();
 }
 async function createQuestionSet() {
   const name=window.prompt('Tên bộ câu hỏi mới:');
   if (!name?.trim()) return;
-  try { const set=await api('/api/question-sets',post({name})); await loadQuestionSets(); $('#question-set-filter').value=String(set.id); bankFilterChanged(); }
+  try { const set=await api('/api/question-sets',post({name,folderId:bankFolder})); await loadQuestionSets(); $('#question-set-filter').value=String(set.id); bankFilterChanged(); }
   catch(error) { showError(error); }
 }
 function selectedQuestionSet() { return questionSets.find(set=>String(set.id)===$('#question-set-filter').value); }
