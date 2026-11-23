@@ -38,8 +38,13 @@ test('Folders migrate existing sets, isolate accounts and preserve questions whe
  assert.ok((await req(a,'/api/question-sets')).data.every(set=>set.folderId===destination.id));
  assert.equal((await req(a,'/api/question-sets/bulk',{setIds:[existing.id,foreign.id],action:'delete'})).status,404);
  assert.equal((await req(a,'/api/question-sets')).data.length,2);
- assert.equal((await req(a,'/api/question-sets/bulk',{setIds:[existing.id,nested.data.id],action:'delete'})).data.count,2);
+ const deleted=await req(a,'/api/question-sets/bulk',{setIds:[existing.id,nested.data.id],action:'delete',deleteQuestions:true});assert.equal(deleted.data.count,2);assert.equal(deleted.data.deletedQuestions,1);
  assert.deepEqual((await req(a,'/api/question-sets')).data,[]);
- assert.equal((await req(a,'/api/questions')).data[0].setId,null);
- assert.equal((await req(a,'/api/questions')).data[0].prompt,'Keep me');
+ assert.deepEqual((await req(a,'/api/questions')).data,[]);
+ assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM options WHERE question_id=?').get(q.id)).count,0);
+ const single=(await req(a,'/api/question-sets',{name:'Delete contents'})).data;
+ const singleQuestion=(await req(a,'/api/questions/import',{setId:single.id,questions:[{prompt:'Remove me',options:['a','b','c','d'],answerIndex:0,confirmed:true}]})).data.imported[0];
+ assert.equal((await req(b,'/api/question-sets/'+single.id,{deleteQuestions:true},'DELETE')).status,404);
+ assert.equal((await req(a,'/api/question-sets/'+single.id,{deleteQuestions:true},'DELETE')).data.deletedQuestions,1);
+ assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM options WHERE question_id=?').get(singleQuestion.id)).count,0);
 });

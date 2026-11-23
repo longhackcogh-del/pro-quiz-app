@@ -120,8 +120,9 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  assert.equal((await request(a,'/api/question-sets/bulk',{setIds:[destination.id,secondSet.id],action:'move',folderId:bulkFolder.id})).data.count,2);
  assert.equal((await request(a,'/api/question-sets')).data.filter(set=>set.folderId===bulkFolder.id).length,2);
  assert.equal((await request(b,'/api/question-sets/bulk',{setIds:[destination.id,secondSet.id],action:'delete'})).status,404);
- assert.equal((await request(a,'/api/question-sets/bulk',{setIds:[destination.id,secondSet.id],action:'delete'})).data.count,2);
- assert.ok((await request(a,'/api/questions')).data.filter(q=>imported66.data.imported.some(item=>item.id===q.id)).every(q=>q.setId===null));
+ const deletedSets=await request(a,'/api/question-sets/bulk',{setIds:[destination.id,secondSet.id],action:'delete',deleteQuestions:true});assert.equal(deletedSets.data.count,2);assert.equal(deletedSets.data.deletedQuestions,66);
+ assert.equal((await request(a,'/api/questions')).data.filter(q=>imported66.data.imported.some(item=>item.id===q.id)).length,0);
+ assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM options WHERE question_id=?').get(imported66.data.imported[0].id)).count,0);
 
 
 });

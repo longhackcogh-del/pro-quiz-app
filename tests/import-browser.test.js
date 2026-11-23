@@ -253,6 +253,9 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await evaluate('state.attempt=window.beforeSetPractice; openViewQuestions()');
   await dialogAction('renameQuestionSet()',{value:'Renamed chapter'});
   assert.equal(await evaluate('selectedQuestionSet().name'),'Renamed chapter');
+  await dialogAction('deleteQuestionSet()',{accept:false});
+  assert.equal(await evaluate('questionSets.length'),1);
+  await evaluate("api('/api/question-sets/contents/move',{...post({questionIds:state.questions.map(q=>q.id),setId:null}),method:'PATCH'})");
   await dialogAction('deleteQuestionSet()');
   assert.equal(await evaluate('questionSets.length'),0);
   assert.equal(await evaluate('state.questions.length'),3);
@@ -582,6 +585,10 @@ D. \(\int_0^1 x\,dx\)
   await evaluate("for(const set of window.bulkSets){const checkbox=document.querySelector('[data-set-id=\"'+set.id+'\"] .library-set-check');checkbox.click();}");
   assert.equal(await evaluate('librarySelected.size'),2);
   assert.equal(await evaluate("document.querySelector('#library-selection').hidden"),false);
+  const beforeBulkDelete=await evaluate('state.questions.length');
+  await evaluate("api('/api/questions/import',post({setId:window.bulkSets[0].id,questions:[{prompt:'Delete with set',options:['a','b','c','d'],answerIndex:0,confirmed:true}]}))");
+  await evaluate('openViewQuestions()');
+  assert.equal(await evaluate('state.questions.length'),beforeBulkDelete+1);
   await evaluate("openSelectedSetsDialog();document.querySelector('#move-set-dialog').close()");
   assert.equal(await evaluate('librarySelected.size'),2);
   await evaluate("openSelectedSetsDialog();document.querySelector('#set-folder-target').value=String(window.bulkFolder.id);moveSetToFolder({preventDefault(){}})");
@@ -592,6 +599,9 @@ D. \(\int_0^1 x\,dx\)
   await dialogAction('deleteSelectedSets()');
   assert.ok(await evaluate('window.bulkSets.every(item=>!questionSets.some(set=>set.id===item.id))'));
   assert.equal(await evaluate("document.querySelector('#library-selection').hidden"),true);
+  assert.equal(await evaluate('state.questions.length'),beforeBulkDelete);
+  assert.equal(await evaluate("document.querySelector('#bankTotal').textContent"),String(beforeBulkDelete));
+  assert.equal(await evaluate("document.querySelector('#badge-question-count').textContent"),`${beforeBulkDelete} câu hỏi`);
   await evaluate("(async()=>{await api('/api/question-folders/'+window.bulkFolder.id,{method:'DELETE'});await loadQuestionSets();openQuestionFolder(null)})()");
   const preservedSets=await evaluate('questionSets.map(set=>({id:set.id,count:set.questionCount}))');
   await evaluate("navigateTo('v-paste')");

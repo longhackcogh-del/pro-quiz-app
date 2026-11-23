@@ -76,8 +76,9 @@ function openSelectedSetsDialog(){
 async function deleteSelectedSets(){
   if(libraryBusy||!librarySelected.size)return;
   const ids=[...librarySelected];
-  if(!await appConfirm(`Xóa ${ids.length} bộ đã chọn? Các câu hỏi được giữ ở mục Chưa phân loại.`,{title:'Xóa bộ câu hỏi?',accept:'Xóa bộ',danger:true}))return;
+  const count=questionSets.filter(set=>ids.includes(set.id)).reduce((sum,set)=>sum+set.questionCount,0);
+  if(!await appConfirm(`Xóa vĩnh viễn ${ids.length} bộ và toàn bộ ${count} câu hỏi bên trong? Các lựa chọn, lịch sử câu sai và hội thoại gắn với những câu này cũng bị xóa. Không thể hoàn tác.`,{title:'Xóa bộ và câu hỏi?',accept:'Xóa vĩnh viễn',danger:true}))return;
   libraryBusy=true;renderFolderLibrary();
-  try{await api('/api/question-sets/bulk',post({setIds:ids,action:'delete'}));librarySelected.clear();await openViewQuestions();toast(`Đã xóa ${ids.length} bộ. Câu hỏi được giữ lại.`);}
+  try{const result=await api('/api/question-sets/bulk',post({setIds:ids,action:'delete',deleteQuestions:true}));librarySelected.clear();await openViewQuestions();await refreshHeader().catch(showError);toast(`Đã xóa ${ids.length} bộ và ${result.deletedQuestions} câu hỏi.`);}
   catch(error){showError(error);}finally{libraryBusy=false;renderFolderLibrary();}
 }

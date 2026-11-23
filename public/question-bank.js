@@ -214,8 +214,8 @@ async function renameQuestionSet() {
 }
 async function deleteQuestionSet() {
   const set=selectedQuestionSet(); if (!set) return toast('Chọn một bộ câu hỏi để xóa.');
-  if (!await appConfirm(`Bộ “${set.name}” sẽ được gỡ. Các câu hỏi được giữ ở mục Chưa phân loại.`,{title:'Xóa bộ câu hỏi?',accept:'Xóa bộ',danger:true})) return;
-  try { await api('/api/question-sets/'+set.id,{method:'DELETE'}); await openViewQuestions(); }
+  if (!await appConfirm(`Xóa vĩnh viễn bộ “${set.name}” và toàn bộ ${set.questionCount} câu hỏi bên trong? Các lựa chọn, lịch sử câu sai và hội thoại gắn với những câu này cũng bị xóa. Không thể hoàn tác.`,{title:'Xóa bộ và câu hỏi?',accept:'Xóa vĩnh viễn',danger:true})) return;
+  try { const result=await api('/api/question-sets/'+set.id,{...post({deleteQuestions:true}),method:'DELETE'});await openViewQuestions();await refreshHeader().catch(showError);toast(`Đã xóa bộ và ${result.deletedQuestions} câu hỏi.`); }
   catch(error) { showError(error); }
 }
 async function moveSelectedQuestions() {

@@ -16,14 +16,19 @@ router.post('/', async (req,res) => {
 });
 router.post('/bulk',async(req,res)=>{
   const {setIds,action,folderId}=req.body;
+  if(req.body?.deleteQuestions!==undefined&&typeof req.body?.deleteQuestions!=='boolean')return res.status(400).json({error:'Tùy chọn xóa câu hỏi không hợp lệ.'});
   if(!Array.isArray(setIds)||!setIds.length||setIds.length>1000||!setIds.every(id=>Number.isSafeInteger(id)&&id>0)||!['move','delete'].includes(action)||(action==='move'&&folderId!==null&&(!Number.isSafeInteger(folderId)||folderId<1)))return res.status(400).json({error:'Danh sách bộ hoặc thao tác không hợp lệ.'});
   const ids=[...new Set(setIds)],marks=ids.map(()=>'?').join(',');
   const result=await db.transaction(async()=>{
     if(action==='move'&&folderId!==null&&!await db.prepare('SELECT id FROM question_folders WHERE id=? AND owner_id=?').get(folderId,ownerId()))return null;
     if((await db.prepare('SELECT COUNT(*) AS count FROM question_sets WHERE owner_id=? AND id IN ('+marks+')').get(ownerId(),...ids)).count!==ids.length)return null;
-    if(action==='delete')await db.prepare('DELETE FROM question_sets WHERE owner_id=? AND id IN ('+marks+')').run(ownerId(),...ids);
+    let deletedQuestions=0;
+    if(action==='delete'){
+      if(req.body?.deleteQuestions===true)deletedQuestions=(await db.prepare('DELETE FROM questions WHERE owner_id=? AND set_id IN ('+marks+')').run(ownerId(),...ids)).changes;
+      await db.prepare('DELETE FROM question_sets WHERE owner_id=? AND id IN ('+marks+')').run(ownerId(),...ids);
+    }
     else await db.prepare('UPDATE question_sets SET folder_id=? WHERE owner_id=? AND id IN ('+marks+')').run(folderId,ownerId(),...ids);
-    return {ok:true,count:ids.length};
+    return {ok:true,count:ids.length,deletedQuestions};
   });
   if(!result)return res.status(404).json({error:'Không tìm thấy bộ hoặc thư mục thuộc tài khoản của bạn. Chưa thay đổi dữ liệu.'});
   res.json(result);
@@ -44,9 +49,17 @@ router.patch('/:id', async (req,res) => {
   res.json({ok:true});
 });
 router.delete('/:id', async (req,res) => {
-  const result=(await db.prepare('DELETE FROM question_sets WHERE id=? AND owner_id=?').run(Number(req.params.id),ownerId()));
-  if (!result.changes) return res.status(404).json({error:'Không tìm thấy bộ câu hỏi.'});
-  res.json({ok:true});
+  if(req.body?.deleteQuestions!==undefined&&typeof req.body?.deleteQuestions!=='boolean')return res.status(400).json({error:'Tùy chọn xóa câu hỏi không hợp lệ.'});
+  const id=Number(req.params.id);
+  const result=await db.transaction(async()=>{
+    if(!await db.prepare('SELECT id FROM question_sets WHERE id=? AND owner_id=?').get(id,ownerId()))return null;
+    let deletedQuestions=0;
+    if(req.body?.deleteQuestions===true)deletedQuestions=(await db.prepare('DELETE FROM questions WHERE owner_id=? AND set_id=?').run(ownerId(),id)).changes;
+    await db.prepare('DELETE FROM question_sets WHERE id=? AND owner_id=?').run(id,ownerId());
+    return {ok:true,deletedQuestions};
+  });
+  if (!result) return res.status(404).json({error:'Không tìm thấy bộ câu hỏi.'});
+  res.json(result);
 });
 router.patch('/contents/move', async (req,res) => {
   const {questionIds,setId}=req.body;
