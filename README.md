@@ -36,6 +36,10 @@ HTML/CSS/JavaScript thuần → Express trên Node.js 24 → PostgreSQL (Neon) h
 
 ## Giao diện
 
+Hai theme dùng chung nghiệp vụ: **Pastel** (kem, tím và minh họa thỏ) và **Study Focus** (xanh than, xanh ngọc và góc bàn học). Chuyển bằng nút trượt trên thanh đầu trang hoặc thẻ xem trước trong Cài đặt, không tải lại trang hay thay đổi bài làm. Lựa chọn lưu tại `localStorage` trên trình duyệt, đồng bộ giữa các tab; chưa lưu theo tài khoản Google. Đọc lựa chọn trước khi nạp CSS để tránh chớp sai theme; chuyển màu khoảng 260 ms và tắt hiệu ứng khi bật giảm chuyển động. Hai ảnh hero WebP tổng khoảng 151 KB, không thay logo FIT.
+
+Trang tổng quan hiển thị thư mục, bộ câu hỏi, thống kê và tiến trình bài đang dở từ API thật. Không dùng các số liệu chuỗi ngày học, mục tiêu hoặc đồng hồ minh họa trong bản thiết kế.
+
 Ảnh chụp từ kiểm thử trình duyệt với dữ liệu và tài khoản mô phỏng.
 
 ![Kho câu hỏi trên desktop](docs/screenshots/question-bank.png)

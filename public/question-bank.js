@@ -201,6 +201,7 @@ function renderQuestionSets() {
   }
   renderFolderLibrary();
   renderImportFolders();
+  renderHomeLibrary();
   refreshPracticeChoices();
 }
 async function createQuestionSet() {

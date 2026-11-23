@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PRO QUIZ APP | Future Learning</title>
+<script src="/themes.js"></script>
 <link rel="icon" type="image/png" href="/assets/fit-logo.png?v=1">
-<link rel="stylesheet" href="/prototype-theme.css"><link rel="stylesheet" href="/redesign.css">
+<link rel="stylesheet" href="/prototype-theme.css"><link rel="stylesheet" href="/redesign.css"><link rel="stylesheet" href="/themes.css">
 </head>
 <body>
 <div class="app">
@@ -25,12 +26,12 @@
  <div class="side-bottom"><div class="user-mini"><div class="avatar" id="sideAvatar">G</div><div><b id="sideName">Khách học tập</b><div class="small muted" id="sideEmail">Chưa đăng nhập</div></div></div></div>
 </aside>
 <main class="main">
- <div class="topbar"><div class="crumb">FIT / <b id="view-title">Tổng quan</b></div><div class="top-actions"><span class="pill" id="badge-question-count">Đang tải…</span><button class="btn ghost" id="sound-toggle" aria-label="Tắt âm thanh" aria-pressed="true" onclick="quizSound.toggle()">🔊</button><button class="btn ghost" id="account-button" onclick="openLogin()">Đăng nhập Google</button><button class="btn primary" onclick="navigateTo('v-quiz')">▶ Bắt đầu học</button></div></div>
+ <div class="topbar"><div class="crumb">FIT / <b id="view-title">Tổng quan</b></div><div class="top-actions"><button type="button" class="theme-switch" id="theme-switch" aria-label="Chuyển giao diện" aria-pressed="false"><span class="theme-switch-thumb" aria-hidden="true"></span><span class="theme-switch-option" aria-hidden="true"><span>✿</span> Pastel</span><span class="theme-switch-option" aria-hidden="true"><span>◐</span> Focus</span></button><span class="pill" id="badge-question-count">Đang tải…</span><button class="btn ghost" id="sound-toggle" aria-label="Tắt âm thanh" aria-pressed="true" onclick="quizSound.toggle()">🔊</button><button class="btn ghost" id="account-button" onclick="openLogin()">Đăng nhập Google</button><button class="btn primary" onclick="navigateTo('v-quiz')">▶ Bắt đầu học</button></div></div>
 
  <section class="view-content page active" id="v-menu">
+  <header class="home-heading"><p class="eyebrow">KHÔNG GIAN HỌC TẬP CỦA BẠN</p><h1><span data-theme-copy="focus">Học sâu hơn. Tiến xa hơn.</span><span data-theme-copy="pastel">Một chút mỗi ngày, giỏi hơn mỗi ngày.</span></h1><p>Mỗi câu hỏi là một bước tiến. Học theo nhịp của riêng bạn.</p></header>
   <div class="hero">
-   <div class="hero-main"><div class="eyebrow">LEARN SMARTER · GO FURTHER</div><h2>Chinh phục kiến thức.<br><span style="color:var(--cyan)">Bứt phá tương lai.</span></h2><p>Không chỉ làm trắc nghiệm. Hãy biến mỗi câu hỏi thành một bước tiến trong hành trình học tập của bạn.</p><div class="hero-buttons"><button class="btn primary" onclick="navigateTo('v-quiz')">▶ Bắt đầu luyện tập</button><button class="btn ghost" onclick="navigateTo('v-paste')">＋ Nhập tài liệu</button></div></div>
-   <div class="hero-side"><div class="ai-orb">✦</div><div><div class="eyebrow">AI STUDY COMPANION</div><h3 style="font-size:21px;margin:9px 0">Trợ lý học tập thông minh</h3><p class="muted small">Hỏi đáp theo ngữ cảnh câu hỏi, giải thích kiến thức và hỗ trợ ôn tập.</p><button class="btn" onclick="toggleStudyChat(true)">Khám phá trợ lý AI ↗</button></div></div>
+   <div class="hero-main"><div class="hero-art" aria-hidden="true"><img class="hero-art-focus" src="/assets/themes/focus-study.webp" alt="" fetchpriority="high" width="900" height="600"><img class="hero-art-pastel" src="/assets/themes/pastel-study.webp" alt="" width="900" height="600"></div><div class="hero-copy"><div class="eyebrow">MỖI NGÀY MỘT CHÚT TIẾN BỘ</div><h2><span data-theme-copy="focus">Tiếp tục hành trình của bạn.</span><span data-theme-copy="pastel">Sẵn sàng cho buổi học hôm nay?</span></h2><p id="home-study-status">Chọn một bộ câu hỏi và bắt đầu từ những bước nhỏ.</p><div class="progress" id="home-study-progress" hidden><i></i></div><div class="hero-buttons"><button class="btn primary" id="home-study-action" onclick="continueDashboardStudy()">Bắt đầu học →</button><button class="btn ghost" onclick="beginNewImport()">＋ Nhập đề</button></div></div></div>
   </div>
   <div class="grid stats">
    <div class="stat"><div class="stat-icon">▤</div><div><small>Tổng câu hỏi</small><strong id="statTotal">—</strong></div></div>
@@ -38,6 +39,7 @@
    <div class="stat"><div class="stat-icon">◷</div><div><small>Bài đã luyện</small><strong id="statSessions">—</strong></div></div>
    <div class="stat"><div class="stat-icon">↗</div><div><small>Tỷ lệ chính xác</small><strong id="statAccuracy">—</strong></div></div>
   </div>
+  <div class="home-columns"><div class="home-library"><div class="section-title"><h2>Thư viện của tôi</h2><div class="home-library-actions"><button class="btn ghost" onclick="createHomeFolder()">＋ Tạo thư mục</button><button class="btn primary" onclick="beginNewImport()">＋ Nhập đề</button></div></div><div class="home-folder-grid" id="home-folders"><p class="home-empty">Đăng nhập để mở thư viện riêng của bạn.</p></div><div class="section-title"><h2>Các bộ gần đây</h2><button class="btn ghost" onclick="openViewQuestions()">Xem tất cả →</button></div><div id="home-sets"></div></div><aside class="home-aside"><div class="panel"><span class="home-aside-icon" aria-hidden="true">✧</span><h3>Học theo nhịp của bạn</h3><p id="home-learning-note">Đăng nhập Google để lưu riêng bộ câu hỏi và tiến trình học của bạn.</p><button class="btn" onclick="openPracticePicker()">Chọn bộ luyện tập →</button></div><div class="panel"><span class="home-aside-icon" aria-hidden="true">↻</span><h3>Biến câu sai thành điểm mạnh</h3><p>Ôn lại câu chưa đúng, củng cố kiến thức và thử thêm một lần nữa.</p><button class="btn ghost" onclick="openWrongLogView()">Mở lịch sử câu sai →</button></div></aside></div>
   <div class="section-title"><h2>Lối tắt học tập</h2><span></span></div>
   <div class="grid quick">
    <div class="quick-card" onclick="navigateTo('v-quiz')"><div class="qicon">🎯</div><b>Luyện tập ngay</b><small>Bắt đầu một lượt làm bài mới</small></div>
@@ -119,6 +121,7 @@
  </section>
  <section class="view-content page" id="v-settings">
   <div class="page-head"><div><h1>Cài đặt & hướng dẫn</h1><p>Quản lý tài khoản, dữ liệu và hướng dẫn học tập.</p></div></div>
+  <section class="panel appearance-panel" aria-labelledby="appearance-title"><div><p class="eyebrow">KHÔNG GIAN THEO CÁCH CỦA BẠN</p><h2 id="appearance-title">Chọn giao diện yêu thích</h2><p class="muted">Chuyển bất cứ lúc nào, giữ nguyên bài làm và dữ liệu.</p></div><div class="theme-choices" role="group" aria-label="Giao diện website"><button class="theme-choice" data-theme-pick="pastel" type="button" aria-pressed="false"><span class="theme-preview theme-preview-pastel" aria-hidden="true"><span></span><i>✿</i></span><strong>Pastel <span class="theme-choice-check" aria-hidden="true">✓</span></strong><small>Ấm áp, dễ thương và đầy cảm hứng.</small></button><button class="theme-choice" data-theme-pick="focus" type="button" aria-pressed="true"><span class="theme-preview theme-preview-focus" aria-hidden="true"><span></span><i>◐</i></span><strong>Study Focus <span class="theme-choice-check" aria-hidden="true">✓</span></strong><small>Xanh than, xanh ngọc dịu và tập trung.</small></button></div><p class="small muted" id="theme-status" role="status" aria-live="polite"></p></section>
   <div class="grid content-grid">
    <div class="panel"><h3>Tài khoản</h3><div class="row-item"><div class="stat-icon">G</div><div class="grow"><b>Đăng nhập bằng Google</b><small id="account-status">Đang kiểm tra cấu hình Google…</small></div><button class="btn" onclick="openLogin()">Đăng nhập</button></div></div>
    <div class="panel"><h3>Hướng dẫn nhanh</h3><button class="btn ghost" onclick="navigateTo('v-help')">Xem mẫu định dạng A–D →</button><div class="row-item"><div class="grow"><b>Định dạng câu hỏi</b><small>Câu hỏi + bốn lựa chọn A, B, C, D. Mỗi câu nên có đáp án rõ ràng.</small></div></div><div class="row-item"><div class="grow"><b>Xác nhận đáp án</b><small>Chỉ câu đã xác nhận mới được đưa vào lượt luyện tập và chấm điểm.</small></div></div><div class="row-item"><div class="grow"><b>Quản lý dữ liệu</b><small>Reset tiến trình hoặc xóa toàn bộ dữ liệu cần xác nhận riêng.</small></div></div></div>
@@ -156,5 +159,5 @@ D. Hải Phòng
 <div class="toast" id="app-toast" role="status" aria-live="polite"></div>
 <link rel="stylesheet" href="/vendor/katex/katex.min.css">
 <script src="/vendor/katex/katex.min.js" defer></script><script src="/vendor/katex/contrib/mhchem.min.js" defer></script><script src="/vendor/katex/contrib/auto-render.min.js" defer></script><script src="/math-content.js" defer></script><script src="/sounds.js" defer></script>
-<script src="/app-dialog.js" defer></script><script src="/reference-app.js" defer></script><script src="/question-bank.js" defer></script><script src="/question-folders.js" defer></script><script src="/import-workflow.js" defer></script><script src="/practice-picker.js" defer></script><script src="/feedback.js" defer></script><script src="/redesign.js" defer></script><script src="/import-guide.js" defer></script><script src="/textbook-guide.js" defer></script>
+<script src="/app-dialog.js" defer></script><script src="/reference-app.js" defer></script><script src="/question-bank.js" defer></script><script src="/question-folders.js" defer></script><script src="/import-workflow.js" defer></script><script src="/home-dashboard.js" defer></script><script src="/practice-picker.js" defer></script><script src="/feedback.js" defer></script><script src="/redesign.js" defer></script><script src="/import-guide.js" defer></script><script src="/textbook-guide.js" defer></script>
 </body></html>

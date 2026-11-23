@@ -80,8 +80,9 @@ function syncTeacherAvailability() {
 }
 const originalRefreshHeader = refreshHeader;
 refreshHeader = async function() {
-  const [,dashboard] = await Promise.all([originalRefreshHeader(false),state.accountId ? api('/api/dashboard') : Promise.resolve(null)]);
+  const [,dashboard] = await Promise.all([originalRefreshHeader(false),state.accountId ? api('/api/dashboard') : Promise.resolve(null),state.accountId&&state.view==='v-menu'?loadQuestionSets():Promise.resolve()]);
   syncTeacherAvailability();
+  renderHomeDashboard(dashboard);
   if (!state.accountId) return;
   if (!dashboard) return;
   $('#badge-question-count').textContent = `${dashboard.total} câu hỏi`;
@@ -135,6 +136,7 @@ function resetAccountData(accountId) {
   clearTimeout(state.transitionTimer);
   state.accountId = accountId;
   state.questions = []; state.attempt = null; state.pending = []; state.importInvalid = [];
+  renderHomeDashboard(null);
   $('#import-new-name').value='';$('#import-mode').value='new';importReviewFilter='all';changeImportMode();showImportStep(1);
   $('#import-set-target').value='none';
   state.importText = null; state.busy = false; state.importBusy = false;
