@@ -259,6 +259,8 @@ app.post('/api/imports/ai-preview', protectAI(async (req, res) => {
 }));
 
 app.post('/api/questions/import', async (req, res) => {
+  const setId=req.body.setId??null;
+  if(setId!==null&&(!Number.isSafeInteger(setId)||setId<1))return res.status(400).json({error:'Bộ lưu câu hỏi không hợp lệ.'});
   const parsed = Array.isArray(req.body.questions)
     ? { questions: req.body.questions, invalid: [], totalBlocks: req.body.questions.length }
     : parseQuizText(req.body.text);
@@ -282,14 +284,17 @@ app.post('/api/questions/import', async (req, res) => {
     validated.push({ prompt, options, answerIndex, answerStatus, answerSource, sourceText, suggestionIndex, suggestionReason });
   }
   if (!validated.length) return res.status(400).json({ error: 'Không có câu hợp lệ để lưu.' });
-  await db.transaction(async () => {
+  const saved=await db.transaction(async () => {
+    if(setId!==null&&!await db.prepare('SELECT id FROM question_sets WHERE id=? AND owner_id=?').get(setId,ownerId()))return false;
     for (let offset=0;offset<validated.length;offset+=500) {
       const chunk=validated.slice(offset,offset+500);
-      const ids=(await db.prepare('INSERT INTO questions (prompt,source_text,answer_index,answer_status,answer_source,ai_suggestion_index,ai_suggestion_reason,owner_id) VALUES '+chunk.map(()=>'(?,?,?,?,?,?,?,?)').join(',')+' RETURNING id').all(...chunk.flatMap(question=>[question.prompt,question.sourceText,question.answerIndex,question.answerStatus,question.answerSource,question.suggestionIndex,question.suggestionReason,ownerId()]))).map(row=>row.id).sort((a,b)=>a-b);
+      const ids=(await db.prepare('INSERT INTO questions (prompt,source_text,answer_index,answer_status,answer_source,ai_suggestion_index,ai_suggestion_reason,owner_id,set_id) VALUES '+chunk.map(()=>'(?,?,?,?,?,?,?,?,?)').join(',')+' RETURNING id').all(...chunk.flatMap(question=>[question.prompt,question.sourceText,question.answerIndex,question.answerStatus,question.answerSource,question.suggestionIndex,question.suggestionReason,ownerId(),setId]))).map(row=>row.id).sort((a,b)=>a-b);
       await db.prepare('INSERT INTO options (question_id,option_index,text) VALUES '+chunk.flatMap(()=>Array(4).fill('(?,?,?)')).join(',')).run(...chunk.flatMap((question,index)=>question.options.flatMap((text,optionIndex)=>[ids[index],optionIndex,text])));
-      chunk.forEach((question,index)=>imported.push(mapQuestion({id:ids[index],prompt:question.prompt,source_text:question.sourceText,set_id:null,answer_index:question.answerIndex,answer_status:question.answerStatus,answer_source:question.answerSource,ai_suggestion_index:question.suggestionIndex,ai_suggestion_reason:question.suggestionReason},question.options)));
+      chunk.forEach((question,index)=>imported.push(mapQuestion({id:ids[index],prompt:question.prompt,source_text:question.sourceText,set_id:setId,answer_index:question.answerIndex,answer_status:question.answerStatus,answer_source:question.answerSource,ai_suggestion_index:question.suggestionIndex,ai_suggestion_reason:question.suggestionReason},question.options)));
     }
+    return true;
   });
+  if(!saved)return res.status(404).json({error:'Bộ đích không tồn tại hoặc không thuộc tài khoản của bạn. Nội dung xem trước chưa được lưu.'});
   res.status(201).json({ ...parsed, imported });
 });
 

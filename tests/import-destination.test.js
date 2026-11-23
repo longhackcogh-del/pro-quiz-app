@@ -1,0 +1,26 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+test('Import all 66 questions directly into the chosen set; moves are atomic and count only changes',async t=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'quiz-destination-'));process.env.DATABASE_FILE=path.join(directory,'test.sqlite');
+ const {loadAuthenticatedApp,authenticatedFetch}=require('./auth-client');const app=loadAuthenticatedApp(),db=require('../server/database');const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.on('listening',resolve));const base='http://127.0.0.1:'+server.address().port;
+ t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();const target=path.resolve(directory);if(path.dirname(target)!==path.resolve(os.tmpdir())||!path.basename(target).startsWith('quiz-destination-'))throw Error('Unexpected cleanup path');fs.rmSync(target,{recursive:true,force:true});});
+ const a=await authenticatedFetch(base),b=await authenticatedFetch(base,'destination-other','other@example.com');
+ const request=async(user,url,body,method='POST')=>{const r=await user(base+url,body===undefined?{}:{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return{status:r.status,data:await r.json()};};
+ const set=async(user,name)=>(await request(user,'/api/question-sets',{name})).data.id;
+ const first=await set(a,'New set'),second=await set(a,'Other destination'),untouched=await set(a,'Keep original'),foreign=await set(b,'Foreign');
+ const questions=count=>Array.from({length:count},(_,i)=>({prompt:'Question '+i,options:['a','b','c','d'],answerIndex:0,confirmed:true}));
+ await request(a,'/api/questions/import',{questions:questions(3),setId:untouched});
+ const imported=await request(a,'/api/questions/import',{questions:questions(66),setId:first});assert.equal(imported.status,201);assert.equal(imported.data.imported.length,66);assert.ok(imported.data.imported.every(q=>q.setId===first));
+ let sets=(await request(a,'/api/question-sets')).data;assert.equal(sets.find(s=>s.id===first).questionCount,66);assert.equal(sets.find(s=>s.id===untouched).questionCount,3);
+ const ids=imported.data.imported.map(q=>q.id);assert.equal((await request(a,'/api/attempts',{questionIds:ids})).data.total,66);
+ assert.equal((await request(a,'/api/question-sets/contents/move',{questionIds:Array.from({length:10001},(_,index)=>index+1),setId:second},'PATCH')).status,413);
+ assert.equal((await request(a,'/api/questions/import',{questions:questions(1),setId:foreign})).status,404);assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,69);
+ assert.equal((await request(a,'/api/questions/import',{questions:questions(1),setId:'bad'})).status,400);
+ let moved=await request(a,'/api/question-sets/contents/move',{questionIds:ids,setId:second},'PATCH');assert.equal(moved.data.moved,66);
+ moved=await request(a,'/api/question-sets/contents/move',{questionIds:ids,setId:second},'PATCH');assert.equal(moved.data.moved,0);assert.equal(moved.data.unchanged,66);
+ const additional=(await request(a,'/api/questions/import',{questions:questions(1040),setId:first})).data.imported.map(q=>q.id);
+ const foreignQuestion=(await request(b,'/api/questions/import',{questions:questions(1),setId:foreign})).data.imported[0].id;
+ const all=[...ids,...additional];const rejected=await request(a,'/api/question-sets/contents/move',{questionIds:[...all,foreignQuestion],setId:first},'PATCH');assert.equal(rejected.status,404);
+ sets=(await request(a,'/api/question-sets')).data;assert.equal(sets.find(s=>s.id===second).questionCount,66);
+ moved=await request(a,'/api/question-sets/contents/move',{questionIds:all,setId:second},'PATCH');assert.equal(moved.status,200);assert.equal(moved.data.moved,1040);assert.equal(moved.data.unchanged,66);
+ sets=(await request(a,'/api/question-sets')).data;assert.equal(sets.find(s=>s.id===second).questionCount,1106);assert.equal(sets.find(s=>s.id===untouched).questionCount,3);
+});

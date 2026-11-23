@@ -9,6 +9,7 @@ function navigateTo(view) {
   if (view === 'v-list') return openViewQuestions();
   if (view === 'v-wrong') return openWrongLogView();
   if (view === 'v-quiz') return startQuizSession();
+  if (view === 'v-paste') prepareImportDestination();
   setView(view);
   if (view === 'v-menu' || view === 'v-settings') refreshHeader().catch(showError);
 }
@@ -27,7 +28,7 @@ function quickChat(message) {
   $('#ai-chat-input-field').value = message;
   return sendCustomMessageToAI();
 }
-function filterQuestionBank() { bankPage = 1; renderBank(); }
+function filterQuestionBank() { bankFilterChanged(); }
 async function createNewPractice() {
   return openPracticePicker();
 }
@@ -125,6 +126,7 @@ function resetAccountData(accountId) {
   resetPracticePicker();
   resetAppDialog();
   state.practiceLoading=null;
+  state.importSetId=null;state.importFolderId=null;
   questionSets=[];questionFolders=[];bankFolder=null;renderQuestionSets();
   if($('#move-set-dialog').open)$('#move-set-dialog').close();
   movingSetId=null;$('#move-set-name').textContent='';$('#set-folder-target').replaceChildren();
@@ -133,6 +135,7 @@ function resetAccountData(accountId) {
   clearTimeout(state.transitionTimer);
   state.accountId = accountId;
   state.questions = []; state.attempt = null; state.pending = []; state.importInvalid = [];
+  $('#import-set-target').value='none';
   state.importText = null; state.busy = false; state.importBusy = false;
   bankSelected.clear(); bankAnswerDrafts.clear(); bankPage = 1;
   if ($('#editModal').classList.contains('open')) closeEdit();

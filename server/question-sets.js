@@ -36,12 +36,19 @@ router.delete('/:id', async (req,res) => {
 });
 router.patch('/contents/move', async (req,res) => {
   const {questionIds,setId}=req.body;
-  if (!Array.isArray(questionIds) || !questionIds.length || questionIds.length>1000 || !questionIds.every(Number.isSafeInteger) || (setId!==null && !Number.isSafeInteger(setId))) return res.status(400).json({error:'Danh sách câu hỏi hoặc bộ đích không hợp lệ.'});
-  if (setId!==null && !(await db.prepare('SELECT id FROM question_sets WHERE id=? AND owner_id=?').get(setId,ownerId()))) return res.status(404).json({error:'Không tìm thấy bộ câu hỏi.'});
+  if (!Array.isArray(questionIds) || !questionIds.length || !questionIds.every(id=>Number.isSafeInteger(id)&&id>0) || (setId!==null && (!Number.isSafeInteger(setId)||setId<1))) return res.status(400).json({error:'Danh sách câu hỏi hoặc bộ đích không hợp lệ.'});
   const ids=[...new Set(questionIds)];
-  const placeholders=ids.map(()=>'?').join(',');
-  if ((await db.prepare(`SELECT COUNT(*) AS count FROM questions WHERE owner_id=? AND id IN (${placeholders})`).get(ownerId(),...ids)).count!==ids.length) return res.status(404).json({error:'Không tìm thấy câu hỏi thuộc tài khoản của bạn.'});
-  (await db.prepare(`UPDATE questions SET set_id=? WHERE owner_id=? AND id IN (${placeholders})`).run(setId,ownerId(),...ids));
-  res.json({ok:true,moved:ids.length});
+  if(ids.length>10000)return res.status(413).json({error:'Mỗi lần di chuyển tối đa 10.000 câu. Hãy chia thành các lần nhỏ hơn; chưa có câu nào được chuyển.'});
+  const result=await db.transaction(async()=>{
+    if(setId!==null&&!await db.prepare('SELECT id FROM question_sets WHERE id=? AND owner_id=?').get(setId,ownerId()))return null;
+    let count=0;
+    for(let offset=0;offset<ids.length;offset+=1000){const chunk=ids.slice(offset,offset+1000);count+=(await db.prepare('SELECT COUNT(*) AS count FROM questions WHERE owner_id=? AND id IN ('+chunk.map(()=>'?').join(',')+')').get(ownerId(),...chunk)).count;}
+    if(count!==ids.length)return null;
+    let moved=0;
+    for(let offset=0;offset<ids.length;offset+=1000){const chunk=ids.slice(offset,offset+1000);moved+=(await db.prepare('UPDATE questions SET set_id=? WHERE owner_id=? AND id IN ('+chunk.map(()=>'?').join(',')+') AND '+(setId===null?'set_id IS NOT NULL':'(set_id IS NULL OR set_id<>?)')).run(setId,ownerId(),...chunk,...(setId===null?[]:[setId]))).changes;}
+    return {ok:true,moved,unchanged:ids.length-moved};
+  });
+  if(!result)return res.status(404).json({error:'Có câu hỏi hoặc bộ đích không thuộc tài khoản của bạn. Chưa di chuyển câu nào.'});
+  res.json(result);
 });
 module.exports=router;

@@ -110,6 +110,11 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  assert.equal((await request(b,'/api/questions/bulk-delete',{questionIds:bulk.data.imported.slice(0,2).map(q=>q.id)})).status,404);
  const bulkDeleted=await request(a,'/api/questions/bulk-delete',{questionIds:bulk.data.imported.slice(0,2).map(q=>q.id)});assert.equal(bulkDeleted.status,200);assert.equal(bulkDeleted.data.deleted,2);
  t.diagnostic(JSON.stringify({feedbackOnlyBytes:JSON.stringify(feedback.data).length,feedbackAndResumeMs:Math.round(performance.now()-feedbackStart)}));
+ const destination=(await request(a,'/api/question-sets',{name:'Import 66'})).data;
+ const imported66=await request(a,'/api/questions/import',{setId:destination.id,questions:Array.from({length:66},(_,index)=>({prompt:'Import regression '+index,options:['a','b','c','d'],answerIndex:0,confirmed:true}))});
+ assert.equal(imported66.status,201);assert.equal(imported66.data.imported.length,66);assert.ok(imported66.data.imported.every(q=>q.setId===destination.id));
+ assert.equal((await request(a,'/api/question-sets')).data.find(set=>set.id===destination.id).questionCount,66);
+ const unchanged=await request(a,'/api/question-sets/contents/move',{questionIds:imported66.data.imported.map(q=>q.id),setId:destination.id},'PATCH');assert.equal(unchanged.data.moved,0);assert.equal(unchanged.data.unchanged,66);
 
 
 });

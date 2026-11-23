@@ -17,7 +17,7 @@ const browserPath = [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 ].find((candidate) => candidate && fs.existsSync(candidate));
 
-test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the shared bank, missing key keeps preview', { skip: !browserPath, timeout: 60000 }, async (t) => {
+test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the imported questions, missing key keeps preview', { skip: !browserPath, timeout: 60000 }, async (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pro-quiz-browser-'));
   process.env.DATABASE_FILE = path.join(directory, 'test.sqlite');
   process.env.GEMINI_API_KEY = '';
@@ -202,7 +202,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.ok(await evaluate("document.querySelector('#import-message').textContent.includes('Chưa kết nối AI')"));
   assert.equal(await evaluate("document.querySelector('[data-prompt]').value"), 'Could you check the departure time .............. we leave for the airport?');
   await evaluate("document.querySelector('[data-answer]').value='3'; document.querySelector('[data-confirm]').click(); saveImportPreview(true)");
-  assert.equal(await evaluate('state.attempt.total'), 3);
+  assert.equal(await evaluate('state.attempt.total'), 1);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count, 3);
   await evaluate('openViewQuestions()');
   const beforeCancelledCreate=await evaluate('questionSets.length');
@@ -215,9 +215,10 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   const beforeCancelledReset=db.prepare('SELECT COUNT(*) AS count FROM questions').get().count;
   await dialogAction('hardResetDatabase()',{accept:false});
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,beforeCancelledReset);
-  await evaluate("toggleQuestionSelection(state.questions[0].id,true); document.querySelector('#question-set-target').value=String(questionSets[0].id); moveSelectedQuestions()");
+  await evaluate("toggleQuestionSelection(state.questions[0].id,true); document.querySelector('#question-set-target').value=String(questionSets[0].id)");
+  await dialogAction('moveSelectedQuestions()');
   assert.equal(await evaluate('filteredBankQuestions().length'),1);
-  await evaluate('window.beforeSetPractice=state.attempt; practiceQuestionSet()');
+  await evaluate('(async()=>{window.beforeSetPractice=await api("/api/attempts",post({}));await practiceQuestionSet();})()');
   assert.equal(await evaluate('state.attempt.total'),1);
   assert.equal(await evaluate("document.querySelector('#practiceSubject').textContent"),'Chapter 1');
   assert.equal(await evaluate("document.querySelector('#practice-picker-button').textContent"),'Chapter 1');
@@ -521,7 +522,8 @@ D. \(\int_0^1 x\,dx\)
   await dialogAction('createQuestionFolder()',{value:'Tiếng Anh'});
   assert.equal(await evaluate("document.querySelector('#folder-current').textContent"),'Tiếng Anh');
   await dialogAction('createQuestionSet()',{value:'Unit 8 - phần 1'});
-  await evaluate("window.folderUnitId=Number(document.querySelector('#question-set-filter').value);window.folderId=bankFolder;toggleQuestionSelection(state.questions[0].id,true);document.querySelector('#question-set-target').value=String(window.folderUnitId);moveSelectedQuestions()");
+  await evaluate("window.folderUnitId=Number(document.querySelector('#question-set-filter').value);window.folderId=bankFolder;toggleQuestionSelection(state.questions[0].id,true);document.querySelector('#question-set-target').value=String(window.folderUnitId)");
+  await dialogAction('moveSelectedQuestions()');
   assert.equal(await evaluate('filteredBankQuestions().length'),1);
   await dialogAction('createQuestionSet()',{value:'Unit 8 - phần 2'});
   await evaluate("window.emptyPracticeId=Number(document.querySelector('#question-set-filter').value);openPracticePicker()");
@@ -529,7 +531,8 @@ D. \(\int_0^1 x\,dx\)
   assert.equal(await evaluate("document.querySelector('#practice-picker-dialog').open"),true);
   assert.ok(await evaluate("document.querySelector('#practice-picker-status').textContent.includes('chưa có câu hỏi')"));
   await evaluate("document.querySelector('#practice-picker-dialog').close()");
-  await evaluate("window.folderUnitTwo=Number(document.querySelector('#question-set-filter').value);const question=state.questions.find(q=>q.answerStatus==='confirmed'&&q.setId!==window.folderUnitId);toggleQuestionSelection(question.id,true);document.querySelector('#question-set-target').value=String(window.folderUnitTwo);moveSelectedQuestions()");
+  await evaluate("window.folderUnitTwo=Number(document.querySelector('#question-set-filter').value);const question=state.questions.find(q=>q.answerStatus==='confirmed'&&q.setId!==window.folderUnitId);toggleQuestionSelection(question.id,true);document.querySelector('#question-set-target').value=String(window.folderUnitTwo)");
+  await dialogAction('moveSelectedQuestions()');
   await evaluate('openQuestionFolder(null)');
   assert.equal(await evaluate("document.querySelectorAll('.library-folder').length"),1);
   if(process.env.PRO_QUIZ_FOLDER_SCREENSHOT){
@@ -575,6 +578,36 @@ D. \(\int_0^1 x\,dx\)
   await dialogAction('deleteQuestionFolder()');
   assert.equal(await evaluate('questionFolders.length'),0);
   assert.ok(await evaluate('questionSets.some(set=>set.id===window.folderUnitId && set.questionCount===1)'));
+  const preservedSets=await evaluate('questionSets.map(set=>({id:set.id,count:set.questionCount}))');
+  await evaluate("navigateTo('v-paste')");
+  await dialogAction('createImportQuestionSet()',{value:'Direct import 66'});
+  const importSet=await evaluate('state.importSetId');
+  const import66=Array.from({length:66},(_,index)=>`Câu ${index+1}: New import ${index}\nA. One\nB. Two\nC. Three\nD. Four\nĐáp án: A`).join('\n\n');
+  await evaluate(`document.querySelector('#paste-input').value=${JSON.stringify(import66)};handleImportQuestionsManual()`);
+  assert.equal(await evaluate('state.pending.length'),66);
+  await evaluate('changeImportPreviewPage(2)');
+  assert.equal(await evaluate("document.querySelector('#import-set-target').value"),String(importSet));
+  await evaluate('saveImportPreview()');
+  assert.equal(await evaluate('state.view'),'v-list');
+  assert.equal(await evaluate('filteredBankQuestions().length'),66);
+  assert.equal(await evaluate('questionSets.find(set=>set.id==='+importSet+').questionCount'),66);
+  assert.deepEqual(await evaluate('questionSets.filter(set=>set.id!=='+importSet+').map(set=>({id:set.id,count:set.questionCount}))'),preservedSets);
+  await dialogAction('createQuestionSet()',{value:'Move all 66'});
+  const moveSet=await evaluate('selectedQuestionSet().id');
+  await evaluate(`document.querySelector('#question-set-filter').value='${importSet}';bankFilterChanged();toggleSelectPage(true);setBankPage(2);toggleSelectPage(true)`);
+  assert.equal(await evaluate('bankSelected.size'),40);
+  await evaluate('selectAllBankResults()');assert.equal(await evaluate('bankSelected.size'),66);
+  await evaluate(`document.querySelector('#question-set-target').value='${importSet}';renderBankMoveState();moveSelectedQuestions()`);
+  assert.equal(await evaluate("document.querySelector('#bank-move-selected').disabled"),true);
+  assert.equal(await evaluate("document.querySelector('#app-dialog').open"),false);
+  await evaluate(`document.querySelector('#question-set-target').value='${moveSet}';renderBankMoveState()`);
+  await dialogAction('moveSelectedQuestions()',{accept:false});
+  assert.equal(await evaluate('questionSets.find(set=>set.id==='+importSet+').questionCount'),66);
+  await dialogAction('moveSelectedQuestions()');
+  assert.equal(await evaluate('selectedQuestionSet().id'),moveSet);assert.equal(await evaluate('filteredBankQuestions().length'),66);
+  assert.equal(await evaluate('questionSets.find(set=>set.id==='+importSet+').questionCount'),0);
+  await evaluate('toggleSelectPage(true);document.querySelector("#bank-search").value="New import";filterQuestionBank()');
+  assert.equal(await evaluate('bankSelected.size'),0);
   await evaluate('openFeedback()');
   await evaluate("document.querySelector('#feedback-content').value='<img src=x onerror=alert(1)> Góp ý giao diện';submitFeedback({preventDefault(){}})");
   assert.equal(await evaluate("document.querySelector('#feedback-content').value"),'');

@@ -12,6 +12,7 @@
 - Kho câu hỏi riêng: tạo/đổi tên/xóa bộ, chuyển câu hỏi và luyện tập từng bộ.
 - Thư mục riêng theo môn/chủ đề chứa nhiều bộ câu hỏi; giao diện thẻ, chuyển bộ vào/ra thư mục. Xóa thư mục giữ lại các bộ và câu hỏi. Bộ cũ mặc định nằm ngoài thư mục; hỗ trợ một tầng thư mục → bộ → câu hỏi.
 - Nhập TXT, DOCX, PDF có lớp văn bản; xem trước và chỉnh sửa trước khi lưu.
+- Chọn bộ đích trước khi nhập: lưu toàn bộ đề trong một transaction, mở đúng bộ sau khi lưu; luyện ngay chỉ dùng các câu vừa nhập đã xác nhận. “Chọn trang này” chọn trang hiện tại, “Chọn tất cả kết quả” chọn qua mọi trang. Di chuyển câu hỏi phải xác nhận việc rời bộ nguồn; chuyển về cùng bộ trả số thay đổi bằng 0, không báo thành công giả.
 - Chấm điểm, lưu tiến trình, kết quả và lịch sử câu sai.
 - Chọn bài bằng danh sách thư mục có tìm kiếm và checkbox, luyện một hoặc nhiều bộ trong cùng bài. Hộp thoại tiếp tục bài/lưu thoát dùng giao diện trong web; đóng hộp thoại không tự tạo lượt mới.
 - Tạo/đổi tên, xác nhận đáp án, xóa và reset sử dụng hộp thoại đồng bộ trong web; thông báo thành công/lỗi dạng toast thay cho popup mặc định của trình duyệt.

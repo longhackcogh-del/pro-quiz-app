@@ -55,10 +55,20 @@ function renderBank() {
   const checked = visible.filter(question => bankSelected.has(question.id)).length;
   $('#selectPage').checked = visible.length > 0 && checked === visible.length;
   $('#selectPage').indeterminate = checked > 0 && checked < visible.length;
-  $('#selectedCount').textContent = `Đã chọn ${bankSelected.size} câu`;
+  $('#selectedCount').textContent = `Đã chọn ${bankSelected.size}/${list.length} câu`;
+  $('#selectAllResults').textContent=`Chọn tất cả ${list.length} câu`;
+  $('#selectAllResults').disabled=bankMutationBusy||!list.length||bankSelected.size===list.length;
+  $('#clearBankSelection').disabled=bankMutationBusy||!bankSelected.size;
   renderFormulaContent($('#bankTableBody'));
   renderPageButtons(pages);
   document.querySelectorAll('#v-list .bulk-actions button').forEach(button => { button.disabled = bankMutationBusy || !bankSelected.size; });
+  renderBankMoveState();
+}
+function renderBankMoveState(){
+  const target=$('#question-set-target').value==='none'?null:Number($('#question-set-target').value);
+  const changing=state.questions.filter(question=>bankSelected.has(question.id)&&question.setId!==target);
+  $('#bank-move-selected').disabled=bankMutationBusy||!changing.length;
+  $('#bank-move-selected').title=bankSelected.size&&!changing.length?'Các câu đã chọn đã thuộc bộ đích này.':'Di chuyển các câu đã chọn sang bộ đích';
 }
 function renderPageButtons(pages) {
   const numbers = [...new Set([1,bankPage-1,bankPage,bankPage+1,pages])].filter(number => number >= 1 && number <= pages).sort((a,b)=>a-b);
@@ -74,6 +84,7 @@ function setBankPage(page) { bankPage = page; renderBank(); }
 function jumpToPage() { setBankPage(Number($('#jumpPage').value) || 1); }
 function changePageSize() { bankPage = 1; renderBank(); }
 function bankFilterChanged() {
+  bankSelected.clear();
   const value=$('#question-set-filter').value,set=questionSets.find(item=>String(item.id)===value);
   if(set)bankFolder=set.folderId??null;
   if(value==='none')bankFolder=null;
@@ -82,6 +93,8 @@ function bankFilterChanged() {
 function clearBankSearch() { $('#bank-search').value = ''; bankFilterChanged(); }
 function toggleQuestionSelection(id,checked) { if (checked) bankSelected.add(id); else bankSelected.delete(id); renderBank(); }
 function toggleSelectPage(checked) { bankPageData().visible.forEach(question => { if (checked) bankSelected.add(question.id); else bankSelected.delete(question.id); }); renderBank(); }
+function selectAllBankResults(){bankSelected.clear();filteredBankQuestions().forEach(question=>bankSelected.add(question.id));renderBank();}
+function clearBankSelection(){bankSelected.clear();renderBank();}
 
 async function bulkDelete() {
   if (bankMutationBusy || !bankSelected.size || !await appConfirm(`Xóa ${bankSelected.size} câu đã chọn? Lịch sử liên quan cũng có thể bị xóa.`,{title:'Xóa câu hỏi đã chọn?',accept:'Xóa câu hỏi',danger:true})) return;
@@ -171,10 +184,16 @@ async function loadQuestionSets() {
   renderQuestionSets();
 }
 function renderQuestionSets() {
-  for (const id of ['question-set-filter','question-set-target']) {
+  for (const id of ['question-set-filter','question-set-target','import-set-target']) {
     const select=$('#'+id), value=select.value;
-    select.innerHTML=(id!=='question-set-target' ? '<option value="all">Tất cả bộ câu hỏi</option>' : '')+'<option value="none">Chưa phân loại</option>'+questionSets.map(set=>{const folder=questionFolders.find(folder=>folder.id===set.folderId);return `<option value="${set.id}">${escapeHtml((folder?folder.name+' / ':'')+set.name)} (${set.questionCount})</option>`;}).join('');
+    select.innerHTML=(id==='question-set-filter' ? '<option value="all">Tất cả bộ câu hỏi</option>' : '')+'<option value="none">Chưa phân loại</option>'+questionSets.map(set=>{const folder=questionFolders.find(folder=>folder.id===set.folderId);return `<option value="${set.id}">${escapeHtml((folder?folder.name+' / ':'')+set.name)} (${set.questionCount})</option>`;}).join('');
+    if(id==='import-set-target'){
+      const destination=state.importSetId==null?'none':String(state.importSetId);
+      if(destination!=='none'&&!questionSets.some(set=>String(set.id)===destination)){const missing=document.createElement('option');missing.value=destination;missing.textContent='Bộ đã bị xóa — hãy chọn lại';missing.disabled=true;select.append(missing);}
+      select.value=destination;continue;
+    }
     if ([...select.options].some(option=>option.value===value)) select.value=value;
+    else if(id==='question-set-filter')bankSelected.clear();
   }
   renderFolderLibrary();
   refreshPracticeChoices();
@@ -201,10 +220,26 @@ async function deleteQuestionSet() {
 }
 async function moveSelectedQuestions() {
   if (!bankSelected.size || bankMutationBusy) return;
+  const target=$('#question-set-target'),setId=target.value==='none'?null:Number(target.value),name=target.selectedOptions[0]?.textContent||'Chưa phân loại';
+  const ids=[...bankSelected],changing=state.questions.filter(question=>bankSelected.has(question.id)&&question.setId!==setId);
+  if(!changing.length)return toast('Các câu đã chọn đã nằm trong bộ đích này. Không có câu nào cần chuyển.');
+  if(!await appConfirm(`Di chuyển ${changing.length} câu sang “${name}”? Các câu này sẽ rời bộ cũ. Nếu chỉ muốn ôn tổng hợp, bạn có thể chọn nhiều bộ trong Luyện tập mà không cần di chuyển.`,{title:'Di chuyển câu hỏi?',accept:`Di chuyển ${changing.length} câu`}))return;
   bankMutationBusy=true; renderBank();
-  try { await api('/api/question-sets/contents/move',{...post({questionIds:[...bankSelected],setId:$('#question-set-target').value==='none'?null:Number($('#question-set-target').value)}),method:'PATCH'}); bankSelected.clear(); await openViewQuestions(); toast('Đã chuyển câu hỏi.'); }
+  try { const result=await api('/api/question-sets/contents/move',{...post({questionIds:ids,setId}),method:'PATCH'});bankSelected.clear();$('#question-set-filter').value=setId===null?'none':String(setId);bankFolder=setId===null?null:questionSets.find(set=>set.id===setId)?.folderId??null;await openViewQuestions();toast(result.moved?`Đã di chuyển ${result.moved} câu sang “${name}”.`:'Các câu đã ở bộ đích; không thay đổi dữ liệu.'); }
   catch(error) { showError(error); }
   finally { bankMutationBusy=false; renderBank(); }
+}
+function setImportDestination(value){state.importSetId=value==='none'?null:Number(value);}
+function prepareImportDestination(){
+  if(state.pending.length&&!$('#import-preview').hidden)return;
+  state.importSetId=state.view==='v-list'?selectedQuestionSet()?.id??null:null;
+  state.importFolderId=state.view==='v-list'?bankFolder:null;
+  $('#import-set-target').value=state.importSetId==null?'none':String(state.importSetId);
+}
+async function createImportQuestionSet(){
+  const folderId=state.importFolderId??null,name=await appPrompt('Tạo bộ để lưu đề');if(!name)return;
+  try{const set=await api('/api/question-sets',post({name,folderId}));state.importSetId=set.id;await loadQuestionSets();}
+  catch(error){showError(error);}
 }
 async function practiceQuestionSet() {
   if ($('#question-set-filter').value==='all') return toast('Chọn bộ câu hỏi muốn luyện tập.');
