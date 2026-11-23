@@ -69,19 +69,20 @@ function changeImportPreviewPage(page) {
 }
 function renderImportPreview(data, page = 1) {
   state.pending = data.questions || [];
-  const pages=Math.max(1,Math.ceil(state.pending.length/25));
+  const review=state.pending.map((question,index)=>({question,index})).filter(({question})=>importReviewFilter!=='review'||!(question.confirmed===true||question.answerStatus==='confirmed'));
+  const pages=Math.max(1,Math.ceil(review.length/25));
   importPreviewPage=Math.min(Math.max(1,page),pages);
   importPreviewMessage=data.aiMessage;
   const start=(importPreviewPage-1)*25;
   state.importInvalid = data.invalid || [];
   const preview = $('#import-preview');
   preview.hidden = false;
-  preview.innerHTML = `<h4>${state.pending.length} câu có thể nhập</h4><p id="import-message" role="status">${escapeHtml(data.aiMessage || 'Chọn đáp án và tích xác nhận từng câu. Câu chưa xác nhận vẫn có thể lưu nhưng không được chấm điểm.')}</p>${state.pending.slice(start,start+25).map((question, pageIndex) => {
-    const index=start+pageIndex;
+  preview.innerHTML = `<h4>3. Kiểm tra và lưu · ${state.pending.length} câu hợp lệ · ${state.importInvalid.length} khối chưa đọc được</h4><p id="import-message" role="status">${escapeHtml(data.aiMessage || 'Chọn đáp án và tích xác nhận từng câu. Câu chưa xác nhận vẫn có thể lưu nhưng không được chấm điểm.')}</p><div class="import-review-tools"><button class="btn" onclick="showImportStep(1)">Đổi nơi lưu</button><button class="btn" onclick="showImportStep(2)">← Sửa tài liệu</button><label>Hiển thị <select class="field" onchange="filterImportReview(this.value)"><option value="all">Tất cả câu hỏi</option><option value="review" ${importReviewFilter==='review'?'selected':''}>Câu cần kiểm tra đáp án</option></select></label></div><p id="import-save-summary" class="import-save-summary"></p>${!review.length?'<p class="muted">Không còn câu cần kiểm tra trong bộ lọc này.</p>':''}${review.slice(start,start+25).map(({question,index}) => {
     const selected = question.answerIndex ?? question.draftAnswerIndex ?? question.aiSuggestionIndex;
     const confirmed = question.confirmed === true || question.answerStatus === 'confirmed';
     return `<div class="preview-question" data-preview-index="${index}" data-draft-id="${escapeHtml(question.id)}"><h4>Câu ${index + 1}</h4><label>Nội dung câu hỏi<textarea data-prompt rows="2">${escapeHtml(question.prompt)}</textarea></label><div class="preview-options">${question.options.map((option, optionIndex) => `<label>${letter(optionIndex)}<input data-option="${optionIndex}" value="${escapeHtml(option)}"></label>`).join('')}</div><div data-suggestion>${suggestionMarkup(question)}</div><label>Đáp án để xác nhận<select data-answer><option value="">Chưa chọn đáp án</option>${question.options.map((_, optionIndex) => `<option value="${optionIndex}" ${selected === optionIndex ? 'selected' : ''}>${letter(optionIndex)}</option>`).join('')}</select></label><label class="confirm-answer"><input type="checkbox" data-confirm ${confirmed ? 'checked' : ''}> Tôi đã kiểm tra và xác nhận đáp án này</label><p data-confirm-status class="preview-status">${confirmed ? 'Đã xác nhận' : 'Chưa xác nhận — không dùng để chấm điểm'}</p><details><summary>Nội dung đề gốc</summary><pre>${escapeHtml(question.sourceText || question.prompt)}</pre></details></div>`;
-  }).join('')}${state.importInvalid.length ? `<p class="preview-error">Không đọc được ${state.importInvalid.length} khối: ${escapeHtml(state.importInvalid.map((item) => `Khối ${item.importIndex}: ${item.error}`).join('; '))}</p>` : ''}<div class="preview-actions"><button class="btn" onclick="cancelImportPreview()">Hủy</button><button class="btn" onclick="analyzePreviewAnswers().catch(showError)">AI đề xuất đáp án</button><button class="btn btn-primary" onclick="saveImportPreview().catch(showError)">Lưu và xem bộ</button><button class="btn btn-success" onclick="saveImportPreview(true).catch(showError)">Lưu và luyện câu vừa nhập</button></div>`;
+  }).join('')}${state.importInvalid.length ? `<p class="preview-error">Không đọc được ${state.importInvalid.length} khối: ${escapeHtml(state.importInvalid.map((item) => `Khối ${item.importIndex}: ${item.error}`).join('; '))}</p><label><input type="checkbox" id="import-skip-invalid"> Tôi đồng ý bỏ qua các khối lỗi đã liệt kê và chỉ lưu câu hợp lệ.</label>` : ''}<label class="import-duplicate-choice">Nếu trùng nội dung câu hỏi và bốn lựa chọn <select class="field" id="import-duplicates"><option value="keep">Giữ các câu trùng</option><option value="skip">Bỏ các câu trùng trong bộ đích và lần nhập này</option></select></label><div class="preview-actions"><button class="btn" onclick="cancelImportPreview()">Hủy bản xem trước</button><button class="btn" onclick="analyzePreviewAnswers().catch(showError)">AI đề xuất đáp án</button><button class="btn btn-primary" onclick="saveImportPreview().catch(showError)">Lưu bộ câu hỏi</button><button class="btn btn-success" onclick="saveImportPreview(true).catch(showError)">Lưu và luyện ngay</button></div>`;
+  showImportStep(3);updateImportSaveSummary();
   if (pages > 1) {
     const pagination=`<div class="preview-pagination"><button class="btn" ${importPreviewPage===1?'disabled':''} onclick="changeImportPreviewPage(${importPreviewPage-1})">Trang trước</button><span>Trang ${importPreviewPage}/${pages} · 25 câu/trang</span><button class="btn" ${importPreviewPage===pages?'disabled':''} onclick="changeImportPreviewPage(${importPreviewPage+1})">Trang sau</button></div>`;
     preview.querySelector('h4').insertAdjacentHTML('afterend',pagination);
@@ -134,33 +135,44 @@ function collectPreview() {
 }
 async function saveImportPreview(start = false) {
   if (state.importBusy) return;
-  const destination=$('#import-set-target').value,setId=destination==='none'?null:Number(destination);
-  if(destination===''||(setId!==null&&!questionSets.some(set=>set.id===setId)))throw new Error('Hãy chọn lại bộ lưu câu hỏi. Bộ đích có thể đã bị xóa.');
-  const questions = collectPreview();
+  let destination;try{destination=importDestination();}catch(error){showImportStep(1);throw error;}let setId=destination.setId??null;
+  if(state.importInvalid.length&&!$('#import-skip-invalid')?.checked)throw Error('Có khối chưa đọc được. Hãy sửa tài liệu hoặc tích đồng ý bỏ qua khối lỗi trước khi lưu.');
+  let questions = collectPreview();
   if (!questions.length) return showError(new Error('Không có câu hợp lệ để lưu.'));
-  const confirmedCount = questions.filter((question) => question.confirmed).length;
+  let confirmedCount = questions.filter((question) => question.confirmed).length;
   if (start && !confirmedCount) throw new Error('Cần xác nhận ít nhất một đáp án trước khi lưu và bắt đầu làm bài.');
   setImportBusy(true);
   $('#import-message').textContent = `Đang lưu ${questions.length} câu hỏi… Bạn có thể chờ tại đây.`;
   try {
-    const result = await api('/api/questions/import', post({ questions,setId }));
+    const existing=destination.newSet?[]:await api('/api/questions?setId='+(setId===null?'none':setId));
+    const key=question=>JSON.stringify([question.prompt,...question.options].map(text=>text.trim().normalize('NFC'))),seen=new Set(existing.map(key));let duplicates=0;
+    const unique=questions.filter(question=>{const value=key(question);if(seen.has(value)){duplicates++;return false;}seen.add(value);return true;});
+    if(duplicates){
+      const skip=$('#import-duplicates').value==='skip';
+      if(!await appConfirm(`Phát hiện ${duplicates} câu trùng nội dung và bốn lựa chọn. ${skip?`Bỏ ${duplicates} câu trùng và lưu ${unique.length} câu còn lại?`:`Giữ và lưu toàn bộ ${questions.length} câu, bao gồm câu trùng?`}`,{title:'Kiểm tra câu trùng',accept:skip?'Bỏ câu trùng và lưu':'Giữ tất cả và lưu'})){$('#import-message').textContent='Chưa lưu. Bản xem trước được giữ lại để bạn kiểm tra.';return;}
+      if(skip)questions=unique;
+    }
+    if(!questions.length)throw Error('Không có câu mới để lưu sau khi bỏ trùng. Bản xem trước vẫn được giữ.');
+    confirmedCount=questions.filter(question=>question.confirmed).length;
+    if(start&&!confirmedCount)throw Error('Cần ít nhất một câu mới đã xác nhận đáp án để luyện tập.');
+    const result = await api('/api/questions/import', post({ questions,...destination }));setId=result.setId??null;
     state.pending = [];
     state.importText = null;
     $('#import-preview').hidden = true;
     $('#paste-input').value = '';
-    const name=setId===null?'Chưa phân loại':questionSets.find(set=>set.id===setId)?.name;
+    const name=destination.newSet?.name||(setId===null?'Chưa phân loại':questionSets.find(set=>set.id===setId)?.name);
     toast(`Đã lưu đủ ${result.imported.length} câu vào “${name}”: ${confirmedCount} đã xác nhận, ${result.imported.length-confirmedCount} chờ duyệt.`);
     if (start) {
       state.attempt = await api('/api/attempts', post({questionIds:result.imported.filter(question=>question.answerStatus==='confirmed').map(question=>question.id)}));
       await showQuiz();
-    }else{$('#question-set-filter').value=setId===null?'none':String(setId);bankFolder=setId===null?null:questionSets.find(set=>set.id===setId)?.folderId??null;await openViewQuestions();}
+    }else{await loadQuestionSets();$('#question-set-filter').value=setId===null?'none':String(setId);bankFolder=setId===null?null:questionSets.find(set=>set.id===setId)?.folderId??null;await openViewQuestions();}
     await refreshHeader().catch(showError);
   } catch (error) {
     if (state.pending.length && $('#import-message')) $('#import-message').textContent = 'Chưa lưu thành công. Bản xem trước vẫn được giữ lại để thử lại.';
     throw error;
   } finally { setImportBusy(false); }
 }
-function cancelImportPreview() { if (state.importBusy) return; state.pending = []; state.importText = null; $('#import-preview').hidden = true; }
+function cancelImportPreview() { if (state.importBusy) return; state.pending = []; state.importText = null; $('#import-preview').hidden = true;importReviewFilter='all';showImportStep(2); }
 async function analyzePreviewAnswers() {
   if (state.importBusy || !state.pending.length) return;
   const questions = collectPreview();
@@ -221,15 +233,15 @@ async function processLocalFileParsing(event) {
     $('#paste-input').value = data.text;
     state.pending = []; state.importText = null; $('#import-preview').hidden = true;
     $('#file-upload-status-label').textContent = `Đã đọc thành công file: ${data.fileName}`;
-    if (file.name.toLowerCase().endsWith('.docx')) {
+    {
       const preview = await parseQuestionText(data.text);
       state.importText = data.text;
       renderImportPreview(preview);
-      if (!preview.questions.length) $('#import-message').textContent = 'Đã đọc file Word nhưng chưa tìm thấy câu hỏi đúng định dạng. Kiểm tra mẫu Câu 1:, A–D và Đáp án: hoặc chuẩn hóa lại bằng câu lệnh hướng dẫn.';
+      if (!preview.questions.length) $('#import-message').textContent = 'Đã đọc tài liệu nhưng chưa tìm thấy câu hỏi đúng định dạng. Kiểm tra mẫu Câu 1:, A–D và Đáp án: hoặc chuẩn hóa lại bằng câu lệnh hướng dẫn.';
       $('#import-preview').scrollIntoView({ block: 'start' });
     }
   } catch (error) { $('#file-upload-status-label').textContent = 'Không thể đọc tệp.'; showError(error); }
-  finally { setImportBusy(false); }
+  finally { setImportBusy(false);if(event.target)event.target.value=''; }
 }
 function backToMenu() { setView('v-menu'); refreshHeader().catch(showError); }
 async function openViewQuestions() {

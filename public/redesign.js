@@ -135,6 +135,7 @@ function resetAccountData(accountId) {
   clearTimeout(state.transitionTimer);
   state.accountId = accountId;
   state.questions = []; state.attempt = null; state.pending = []; state.importInvalid = [];
+  $('#import-new-name').value='';$('#import-mode').value='new';importReviewFilter='all';changeImportMode();showImportStep(1);
   $('#import-set-target').value='none';
   state.importText = null; state.busy = false; state.importBusy = false;
   bankSelected.clear(); bankAnswerDrafts.clear(); bankPage = 1;

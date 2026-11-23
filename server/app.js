@@ -121,11 +121,11 @@ function mapQuestion(row, options = []) {
   };
 }
 
-async function getQuestions(ids = null) {
+async function getQuestions(ids = null,setId=undefined) {
   const groups = ids === null ? [null] : Array.from({length:Math.ceil(ids.length/2000)},(_,index)=>ids.slice(index*2000,index*2000+2000));
   const result = new Map();
   for (const group of groups) {
-    const rows = await db.prepare('SELECT q.*, o.option_index, o.text AS option_text FROM questions q LEFT JOIN options o ON o.question_id=q.id WHERE q.owner_id=?'+(group ? ' AND q.id IN ('+group.map(()=>'?').join(',')+')' : '')+' ORDER BY q.id,o.option_index').all(ownerId(),...(group || []));
+    const rows = await db.prepare('SELECT q.*, o.option_index, o.text AS option_text FROM questions q LEFT JOIN options o ON o.question_id=q.id WHERE q.owner_id=?'+(group ? ' AND q.id IN ('+group.map(()=>'?').join(',')+')' : '')+(setId===undefined?'':setId===null?' AND q.set_id IS NULL':' AND q.set_id=?')+' ORDER BY q.id,o.option_index').all(ownerId(),...(group || []),...(setId==null?[]:[setId]));
     for (const row of rows) {
       if (!result.has(row.id)) result.set(row.id,mapQuestion(row,[]));
       if (row.option_index !== null) result.get(row.id).options[row.option_index]=row.option_text;
@@ -259,7 +259,9 @@ app.post('/api/imports/ai-preview', protectAI(async (req, res) => {
 }));
 
 app.post('/api/questions/import', async (req, res) => {
-  const setId=req.body.setId??null;
+  let setId=req.body.setId??null;
+  const newSet=req.body.newSet;
+  if(newSet!==undefined&&(!newSet||typeof newSet.name!=='string'||!newSet.name.trim()||newSet.name.trim().length>100||setId!==null||(newSet.folderId!==null&&(!Number.isSafeInteger(newSet.folderId)||newSet.folderId<1))))return res.status(400).json({error:'Tên bộ mới hoặc thư mục không hợp lệ.'});
   if(setId!==null&&(!Number.isSafeInteger(setId)||setId<1))return res.status(400).json({error:'Bộ lưu câu hỏi không hợp lệ.'});
   const parsed = Array.isArray(req.body.questions)
     ? { questions: req.body.questions, invalid: [], totalBlocks: req.body.questions.length }
@@ -285,6 +287,11 @@ app.post('/api/questions/import', async (req, res) => {
   }
   if (!validated.length) return res.status(400).json({ error: 'Không có câu hợp lệ để lưu.' });
   const saved=await db.transaction(async () => {
+    if(newSet){
+      if(newSet.folderId!==null&&!await db.prepare('SELECT id FROM question_folders WHERE id=? AND owner_id=?').get(newSet.folderId,ownerId()))return false;
+      const created=await db.prepare('INSERT INTO question_sets (owner_id,name,folder_id) VALUES (?,?,?)').run(ownerId(),newSet.name.trim(),newSet.folderId);
+      setId=Number(created.lastInsertRowid);
+    }
     if(setId!==null&&!await db.prepare('SELECT id FROM question_sets WHERE id=? AND owner_id=?').get(setId,ownerId()))return false;
     for (let offset=0;offset<validated.length;offset+=500) {
       const chunk=validated.slice(offset,offset+500);
@@ -295,14 +302,16 @@ app.post('/api/questions/import', async (req, res) => {
     return true;
   });
   if(!saved)return res.status(404).json({error:'Bộ đích không tồn tại hoặc không thuộc tài khoản của bạn. Nội dung xem trước chưa được lưu.'});
-  res.status(201).json({ ...parsed, imported });
+  res.status(201).json({ ...parsed, imported,setId });
 });
 
 app.use('/api/question-sets', require('./question-sets'));
 app.use('/api/question-folders', require('./question-folders'));
 
-app.get('/api/questions', async (_req, res) => {
-  res.json(await getQuestions());
+app.get('/api/questions', async (req, res) => {
+  const setId=req.query.setId===undefined?undefined:req.query.setId==='none'?null:Number(req.query.setId);
+  if(setId!=null&&(!Number.isSafeInteger(setId)||setId<1))return res.status(400).json({error:'Bộ câu hỏi không hợp lệ.'});
+  res.json(await getQuestions(null,setId));
 });
 
 async function ownsQuestions(ids) {

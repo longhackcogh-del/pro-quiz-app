@@ -12,6 +12,9 @@ test('Import all 66 questions directly into the chosen set; moves are atomic and
  const imported=await request(a,'/api/questions/import',{questions:questions(66),setId:first});assert.equal(imported.status,201);assert.equal(imported.data.imported.length,66);assert.ok(imported.data.imported.every(q=>q.setId===first));
  let sets=(await request(a,'/api/question-sets')).data;assert.equal(sets.find(s=>s.id===first).questionCount,66);assert.equal(sets.find(s=>s.id===untouched).questionCount,3);
  const ids=imported.data.imported.map(q=>q.id);assert.equal((await request(a,'/api/attempts',{questionIds:ids})).data.total,66);
+ assert.equal((await request(a,'/api/questions?setId='+first)).data.length,66);
+ assert.deepEqual((await request(b,'/api/questions?setId='+first)).data,[]);
+ assert.equal((await request(a,'/api/questions?setId=bad')).status,400);
  assert.equal((await request(a,'/api/question-sets/contents/move',{questionIds:Array.from({length:10001},(_,index)=>index+1),setId:second},'PATCH')).status,413);
  assert.equal((await request(a,'/api/questions/import',{questions:questions(1),setId:foreign})).status,404);assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,69);
  assert.equal((await request(a,'/api/questions/import',{questions:questions(1),setId:'bad'})).status,400);
@@ -23,4 +26,13 @@ test('Import all 66 questions directly into the chosen set; moves are atomic and
  sets=(await request(a,'/api/question-sets')).data;assert.equal(sets.find(s=>s.id===second).questionCount,66);
  moved=await request(a,'/api/question-sets/contents/move',{questionIds:all,setId:second},'PATCH');assert.equal(moved.status,200);assert.equal(moved.data.moved,1040);assert.equal(moved.data.unchanged,66);
  sets=(await request(a,'/api/question-sets')).data;assert.equal(sets.find(s=>s.id===second).questionCount,1106);assert.equal(sets.find(s=>s.id===untouched).questionCount,3);
+ const folder=(await request(a,'/api/question-folders',{name:'Wizard folder'})).data;
+ const foreignFolder=(await request(b,'/api/question-folders',{name:'Other folder'})).data;
+ const before=sets.length;
+ assert.equal((await request(a,'/api/questions/import',{newSet:{name:'Invalid draft',folderId:folder.id},questions:[{prompt:'Invalid',options:[]}]})).status,400);
+ assert.equal((await request(a,'/api/questions/import',{newSet:{name:'Foreign draft',folderId:foreignFolder.id},questions:questions(1)})).status,404);
+ assert.equal((await request(a,'/api/question-sets')).data.length,before);
+ const created=await request(a,'/api/questions/import',{newSet:{name:'Chapter 1',folderId:folder.id},questions:questions(66)});
+ assert.equal(created.status,201);assert.ok(created.data.setId);assert.ok(created.data.imported.every(q=>q.setId===created.data.setId));
+ assert.equal((await request(a,'/api/question-sets')).data.find(set=>set.id===created.data.setId).questionCount,66);
 });

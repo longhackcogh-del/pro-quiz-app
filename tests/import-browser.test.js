@@ -63,7 +63,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
     await Promise.all([new Promise((resolve) => server.close(resolve)), new Promise((resolve) => provider.close(resolve))]);
     db.close();
     const target = path.resolve(directory);
-    if (path.dirname(target) === path.resolve(os.tmpdir()) && path.basename(target).startsWith('pro-quiz-browser-')) fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    if (path.dirname(target) === path.resolve(os.tmpdir()) && path.basename(target).startsWith('pro-quiz-browser-')) await fs.promises.rm(target, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
   });
   // Only the temporary headless browser in Linux CI needs these runner flags.
   const ciFlags=process.env.CI && process.platform==='linux' ? ['--no-sandbox','--disable-dev-shm-usage'] : [];
@@ -158,6 +158,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   await signBrowserIn();
   await evaluate('closeLogin()');
   await evaluate("window.alert=window.confirm=window.prompt=()=>{throw Error('Native browser dialogs must not be used')};openView('v-paste')");
+  await evaluate("document.querySelector('#import-mode').value='none';changeImportMode();continueImportWorkflow()");
   const text = '1. Could you check the departure time .............. we leave for the airport? A. throughout B. during C. until D. before\n\n2. According to the passage, why did he leave? A. Work B. Study C. Travel D. Family';
   await evaluate(`document.querySelector('#paste-input').value=${JSON.stringify(text)}; handleAIQuestionAnalysis()`);
   assert.equal(await evaluate('state.pending.length'), 2);
@@ -196,6 +197,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   // Same frontend with no API key: actual upload + manual confirmation still work.
   process.env.OPENAI_API_KEY = '';
   await evaluate(`openView('v-paste'); processLocalFileParsing({target:{files:[new File([${JSON.stringify(text.split('\n\n')[0])}], 'exam.txt', {type:'text/plain'})]}})`);
+  await evaluate("document.querySelector('#import-mode').value='none';changeImportMode()");
   assert.ok(await evaluate("document.querySelector('#file-upload-status-label').textContent.includes('Đã đọc thành công')"));
   await evaluate('handleAIQuestionAnalysis()');
   assert.equal(await evaluate('state.pending.length'), 1);
@@ -417,6 +419,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   const preparedText = 'Câu 1: Thủ đô của Việt Nam là thành phố nào?\nA. Thành phố Hồ Chí Minh\nB. Đà Nẵng\nC. Hà Nội\nD. Hải Phòng\nĐáp án: C';
   const preparedWord = await fixture.docx(preparedText);
   const bankBeforeWord = db.prepare('SELECT COUNT(*) AS count FROM questions').get().count;
+  await evaluate("document.querySelector('#import-mode').value='none';changeImportMode()");
   await evaluate(`uploadPreparedWord({target:{files:[new File([new Uint8Array(${JSON.stringify([...preparedWord])})],'chatgpt-prepared.docx',{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'})],value:''}})`);
   assert.equal(await evaluate("document.querySelector('#import-guide').open"),false);
   assert.equal(await evaluate('state.pending.length'),1);
@@ -458,7 +461,7 @@ test('Browser: proposal stays unconfirmed, edits invalidate it, save starts the 
   assert.equal(await evaluate('state.pending.length'),1);
   assert.equal(await evaluate('state.pending[0].answerIndex'),2);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,chapterBefore);
-  await evaluate('saveImportPreview()');
+  await dialogAction('saveImportPreview()');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM questions').get().count,chapterBefore+1);
   // A slow save must show selection immediately, never an invented grade.
   await evaluate("(async()=>{const saved=await api('/api/questions/import',post({questions:['Fast one','Fast two'].map(prompt=>({prompt,options:['a','b','c','d'],answerIndex:1,confirmed:true}))}));state.attempt=await api('/api/attempts',post({questionIds:saved.imported.map(q=>q.id)}));state.teacherEnabled=false;await showQuiz();window.quizFetch=window.fetch;window.answerSends=0;window.chatReads=0;window.submitSends=0;window.fetch=(url,options)=>{if(String(url).endsWith('/chat'))window.chatReads++;if(String(url).endsWith('/submit'))window.submitSends++;if(String(url).endsWith('/answer')){window.answerSends++;return new Promise(resolve=>setTimeout(resolve,180)).then(()=>window.quizFetch(url,options));}return window.quizFetch(url,options);};window.soundEvents=[];window.soundPlay=quizSound.play;quizSound.play=name=>{window.soundEvents.push(name);return window.soundPlay(name)};window.pickTask=chooseAnswer(1).then(()=>{window.feedbackShown=!!document.querySelector('.option-item.correct')});window.immediatePick={pending:!!document.querySelector('.option-item.pending'),graded:!!document.querySelector('.option-item.correct,.option-item.wrong'),disabled:[...document.querySelectorAll('.option-item')].every(button=>button.disabled)};})()");
@@ -633,6 +636,65 @@ D. \(\int_0^1 x\,dx\)
   assert.equal(await evaluate('questionSets.find(set=>set.id==='+importSet+').questionCount'),0);
   await evaluate('toggleSelectPage(true);document.querySelector("#bank-search").value="New import";filterQuestionBank()');
   assert.equal(await evaluate('bankSelected.size'),0);
+  // Guided workflow: destination first, atomic new set, explicit invalid/duplicate decisions.
+  await evaluate("document.querySelector('#bank-search').value='';openQuestionFolder(null);beginNewImport()");
+  assert.equal(await evaluate('importStep'),1);
+  assert.equal(await evaluate("document.querySelector('#import-mode').value"),'new');
+  await evaluate('continueImportWorkflow()');
+  assert.equal(await evaluate('importStep'),1);
+  await dialogAction('createImportFolder()',{value:'Wizard subject'});
+  const wizardFolder=await evaluate('state.importFolderId');
+  const beforeWizardSets=await evaluate('questionSets.length');
+  await evaluate("document.querySelector('#import-new-name').value='Wizard chapter';document.querySelector('#app-toast').classList.remove('show')");
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);
+  await screenshot('app-import-destination');
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);
+  assert.ok(await evaluate("document.querySelector('#import-folder-target').getBoundingClientRect().right<=innerWidth"));
+  await screenshot('app-import-destination-mobile');
+  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);
+  await evaluate('continueImportWorkflow()');
+  assert.equal(await evaluate('importStep'),2);
+  assert.equal(await evaluate('questionSets.length'),beforeWizardSets);
+  await screenshot('app-import-source');
+  const wizardText='Câu 1: Wizard first\nA. One\nB. Two\nC. Three\nD. Four\nĐáp án: A\n\nCâu 2: Wizard second\nA. One\nB. Two\nC. Three\nD. Four\n\nCâu 3: Broken block\nA. Alone';
+  await evaluate(`processLocalFileParsing({target:{files:[new File([${JSON.stringify(wizardText)}],'wizard.txt',{type:'text/plain'})]}})`);
+  assert.equal(await evaluate('importStep'),3);
+  assert.equal(await evaluate('state.pending.length'),2);
+  assert.equal(await evaluate('state.importInvalid.length'),1);
+  await evaluate("filterImportReview('review')");
+  assert.equal(await evaluate("document.querySelectorAll('#import-preview .preview-question').length"),1);
+  assert.equal(await evaluate('collectPreview().length'),2);
+  await evaluate("filterImportReview('all');saveImportPreview().catch(error=>window.wizardError=error.message)");
+  assert.ok(await evaluate('window.wizardError'));
+  assert.equal(await evaluate('questionSets.length'),beforeWizardSets);
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);
+  assert.ok(await evaluate("document.querySelector('.import-steps').getBoundingClientRect().right<=innerWidth"));
+  await screenshot('app-import-review-mobile');
+  await send('Emulation.clearDeviceMetricsOverride',{},sessionId);
+  await evaluate("document.querySelector('#import-skip-invalid').checked=true;saveImportPreview()");
+  const wizardSet=await evaluate('selectedQuestionSet().id');
+  assert.equal(await evaluate('selectedQuestionSet().questionCount'),2);
+  assert.equal(await evaluate('selectedQuestionSet().folderId'),wizardFolder);
+  assert.equal(await evaluate('questionSets.length'),beforeWizardSets+1);
+  await evaluate(`beginImportIntoSet(${wizardSet})`);
+  assert.equal(await evaluate('importStep'),2);
+  assert.equal(await evaluate("document.querySelector('#import-mode').value"),'existing');
+  const appendText='Câu 1: Wizard first\nA. One\nB. Two\nC. Three\nD. Four\nĐáp án: A\n\nCâu 2: Wizard third\nA. One\nB. Two\nC. Three\nD. Four\nĐáp án: B';
+  await evaluate(`document.querySelector('#paste-input').value=${JSON.stringify(appendText)};handleImportQuestionsManual()`);
+  assert.ok(await evaluate("document.querySelector('#import-save-summary').textContent.includes('2 câu hiện có + 2 câu hợp lệ = 4')"));
+  await evaluate("document.querySelector('#import-duplicates').value='skip'");
+  await dialogAction('saveImportPreview()');
+  assert.equal(await evaluate('selectedQuestionSet().questionCount'),3);
+  assert.equal(await evaluate('selectedQuestionSet().id'),wizardSet);
+  await evaluate(`beginImportIntoSet(${wizardSet});document.querySelector('#paste-input').value=${JSON.stringify(appendText)};handleImportQuestionsManual()`);
+  await dialogAction('saveImportPreview()',{accept:false});
+  assert.equal(await evaluate('state.pending.length'),2);
+  assert.equal(await evaluate('questionSets.find(set=>set.id==='+wizardSet+').questionCount'),3);
+  await evaluate('cancelImportPreview();openQuestionFolder(null)');
+  assert.equal(await evaluate("document.querySelector('#scroller-questions-list').hidden"),true);
+  await evaluate(`openQuestionFolder(${wizardFolder});toggleLibrarySet(${wizardSet},true);practiceSelectedLibrarySets()`);
+  assert.deepEqual(await evaluate('[...practiceDraft]'),[String(wizardSet)]);
+  await evaluate("document.querySelector('#practice-picker-dialog').close()");
   await evaluate('openFeedback()');
   await evaluate("document.querySelector('#feedback-content').value='<img src=x onerror=alert(1)> Góp ý giao diện';submitFeedback({preventDefault(){}})");
   assert.equal(await evaluate("document.querySelector('#feedback-content').value"),'');

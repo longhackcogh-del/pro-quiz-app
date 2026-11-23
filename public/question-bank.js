@@ -38,6 +38,10 @@ function renderBank() {
   const {list,pages,start,visible} = bankPageData();
   const confirmed = state.questions.filter(question => question.answerStatus === 'confirmed').length;
   $('#bankTotal').textContent = state.questions.length.toLocaleString('vi');
+  const focused=$('#question-set-filter').value!=='all';
+  document.querySelectorAll('#v-list .bank-filters,#v-list .bank-bulkbar,#scroller-questions-list,#v-list .bank-pagination,#bank-detail-heading').forEach(node=>node.hidden=!focused);
+  const scope=selectedQuestionSet();$('#bank-detail-title').textContent=scope?`${scope.name} · ${list.length} câu`:'Chưa phân loại';
+  $('#bank-add-to-set').hidden=!scope;
   $('#bankConfirmed').textContent = confirmed.toLocaleString('vi');
   $('#bankPending').textContent = (state.questions.length-confirmed).toLocaleString('vi');
   $('#bankAccuracy').textContent = state.questions.length ? Math.round(confirmed*100/state.questions.length)+'%' : '—';
@@ -196,6 +200,7 @@ function renderQuestionSets() {
     else if(id==='question-set-filter')bankSelected.clear();
   }
   renderFolderLibrary();
+  renderImportFolders();
   refreshPracticeChoices();
 }
 async function createQuestionSet() {
@@ -231,14 +236,18 @@ async function moveSelectedQuestions() {
 }
 function setImportDestination(value){state.importSetId=value==='none'?null:Number(value);}
 function prepareImportDestination(){
-  if(state.pending.length&&!$('#import-preview').hidden)return;
+  if(state.pending.length){showImportStep(3);return;}
   state.importSetId=state.view==='v-list'?selectedQuestionSet()?.id??null:null;
   state.importFolderId=state.view==='v-list'?bankFolder:null;
   $('#import-set-target').value=state.importSetId==null?'none':String(state.importSetId);
+  $('#import-mode').value=state.importSetId==null?'new':'existing';
+  $('#import-new-name').value='';importReviewFilter='all';renderImportFolders();changeImportMode();showImportStep(1);
+  if(!$('#paste-input').value)$('#file-upload-status-label').textContent='Chưa chọn tệp';
+  if(state.accountId)loadQuestionSets().catch(showError);
 }
 async function createImportQuestionSet(){
   const folderId=state.importFolderId??null,name=await appPrompt('Tạo bộ để lưu đề');if(!name)return;
-  try{const set=await api('/api/question-sets',post({name,folderId}));state.importSetId=set.id;await loadQuestionSets();}
+  try{const set=await api('/api/question-sets',post({name,folderId}));state.importSetId=set.id;$('#import-mode').value='existing';changeImportMode();await loadQuestionSets();}
   catch(error){showError(error);}
 }
 async function practiceQuestionSet() {

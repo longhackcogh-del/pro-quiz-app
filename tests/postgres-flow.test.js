@@ -116,6 +116,12 @@ test('PostgreSQL: private accounts, import, sets, grading, wrong review, rollbac
  assert.equal((await request(a,'/api/question-sets')).data.find(set=>set.id===destination.id).questionCount,66);
  const unchanged=await request(a,'/api/question-sets/contents/move',{questionIds:imported66.data.imported.map(q=>q.id),setId:destination.id},'PATCH');assert.equal(unchanged.data.moved,0);assert.equal(unchanged.data.unchanged,66);
  const bulkFolder=(await request(a,'/api/question-folders',{name:'Bulk regression'})).data;
+ const beforeWizard=(await request(a,'/api/question-sets')).data.length;
+ assert.equal((await request(b,'/api/questions/import',{newSet:{name:'Foreign folder',folderId:bulkFolder.id},questions:[{prompt:'Wizard',options:['a','b','c','d'],answerIndex:0,confirmed:true}]})).status,404);
+ const wizard=await request(a,'/api/questions/import',{newSet:{name:'Atomic chapter',folderId:bulkFolder.id},questions:[{prompt:'Wizard',options:['a','b','c','d'],answerIndex:0,confirmed:true}]});
+ assert.equal(wizard.status,201);assert.equal(wizard.data.imported[0].setId,wizard.data.setId);
+ assert.equal((await request(a,'/api/question-sets')).data.length,beforeWizard+1);
+ await request(a,'/api/question-sets/'+wizard.data.setId,{deleteQuestions:true},'DELETE');
  const secondSet=(await request(a,'/api/question-sets',{name:'Second bulk set'})).data;
  assert.equal((await request(a,'/api/question-sets/bulk',{setIds:[destination.id,secondSet.id],action:'move',folderId:bulkFolder.id})).data.count,2);
  assert.equal((await request(a,'/api/question-sets')).data.filter(set=>set.folderId===bulkFolder.id).length,2);
