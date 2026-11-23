@@ -86,7 +86,7 @@ input::placeholder,textarea::placeholder{color:var(--muted);opacity:.85}
 .theme-preview-focus{background:#152530;color:#89cec0}.theme-preview-focus span{background-image:url('/assets/themes/focus-study.webp')}.theme-preview-focus:after{background:#89cec0}
 
 /* Dashboard uses only the real account's library, stats and attempt progress. */
-.home-heading{margin-bottom:24px}.home-heading h1{font:700 clamp(27px,3vw,42px)/1.2 Georgia,'Times New Roman',serif;letter-spacing:-.8px;margin:12px 0}.home-heading>p:last-child{color:var(--muted);line-height:1.6;margin:0}
+.home-heading{margin-bottom:24px}.home-heading h1{font:700 clamp(27px,3vw,42px)/1.25 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:-.5px;margin:12px 0}.home-heading>p:last-child{color:var(--muted);line-height:1.6;margin:0}
 .home-heading h1,.hero-copy h2{display:grid}.home-heading h1>[data-theme-copy],.hero-copy h2>[data-theme-copy]{display:block!important;grid-area:1/1;visibility:hidden}
 :root[data-theme="focus"] [data-theme-copy="focus"],:root[data-theme="pastel"] [data-theme-copy="pastel"]{visibility:visible}
 :root[data-theme] .hero{display:block}.hero-main{padding:32px;min-height:295px;border-color:var(--line);background:var(--hero);box-shadow:var(--shadow);border-radius:20px}
