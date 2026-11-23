@@ -30,4 +30,16 @@ test('Folders migrate existing sets, isolate accounts and preserve questions whe
  const sets=(await req(a,'/api/question-sets')).data;assert.equal(sets.length,2);assert.ok(sets.every(set=>set.folderId===null));assert.equal(sets.find(set=>set.id===existing.id).questionCount,1);
  const stored=(await req(a,'/api/questions')).data;assert.equal(stored[0].setId,existing.id);assert.equal(stored[0].prompt,'Keep me');
  assert.equal((await req(a,'/api/attempts',{questionIds:[q.id]})).status,201);
+ const destination=(await req(a,'/api/question-folders',{name:'Bulk destination'})).data;
+ assert.equal((await req(a,'/api/question-sets/bulk',{setIds:[existing.id,foreign.id],action:'move',folderId:destination.id})).status,404);
+ assert.ok((await req(a,'/api/question-sets')).data.every(set=>set.folderId===null));
+ assert.equal((await req(a,'/api/question-sets/bulk',{setIds:[existing.id,nested.data.id],action:'move',folderId:foreignFolder.id})).status,404);
+ assert.equal((await req(a,'/api/question-sets/bulk',{setIds:[existing.id,nested.data.id],action:'move',folderId:destination.id})).data.count,2);
+ assert.ok((await req(a,'/api/question-sets')).data.every(set=>set.folderId===destination.id));
+ assert.equal((await req(a,'/api/question-sets/bulk',{setIds:[existing.id,foreign.id],action:'delete'})).status,404);
+ assert.equal((await req(a,'/api/question-sets')).data.length,2);
+ assert.equal((await req(a,'/api/question-sets/bulk',{setIds:[existing.id,nested.data.id],action:'delete'})).data.count,2);
+ assert.deepEqual((await req(a,'/api/question-sets')).data,[]);
+ assert.equal((await req(a,'/api/questions')).data[0].setId,null);
+ assert.equal((await req(a,'/api/questions')).data[0].prompt,'Keep me');
 });

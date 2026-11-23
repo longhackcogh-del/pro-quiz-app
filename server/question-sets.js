@@ -14,6 +14,20 @@ router.post('/', async (req,res) => {
   const result=(await db.prepare('INSERT INTO question_sets (owner_id,name,folder_id) VALUES (?,?,?)').run(ownerId(),name,folderId));
   res.status(201).json({id:Number(result.lastInsertRowid),name,questionCount:0,folderId});
 });
+router.post('/bulk',async(req,res)=>{
+  const {setIds,action,folderId}=req.body;
+  if(!Array.isArray(setIds)||!setIds.length||setIds.length>1000||!setIds.every(id=>Number.isSafeInteger(id)&&id>0)||!['move','delete'].includes(action)||(action==='move'&&folderId!==null&&(!Number.isSafeInteger(folderId)||folderId<1)))return res.status(400).json({error:'Danh sách bộ hoặc thao tác không hợp lệ.'});
+  const ids=[...new Set(setIds)],marks=ids.map(()=>'?').join(',');
+  const result=await db.transaction(async()=>{
+    if(action==='move'&&folderId!==null&&!await db.prepare('SELECT id FROM question_folders WHERE id=? AND owner_id=?').get(folderId,ownerId()))return null;
+    if((await db.prepare('SELECT COUNT(*) AS count FROM question_sets WHERE owner_id=? AND id IN ('+marks+')').get(ownerId(),...ids)).count!==ids.length)return null;
+    if(action==='delete')await db.prepare('DELETE FROM question_sets WHERE owner_id=? AND id IN ('+marks+')').run(ownerId(),...ids);
+    else await db.prepare('UPDATE question_sets SET folder_id=? WHERE owner_id=? AND id IN ('+marks+')').run(folderId,ownerId(),...ids);
+    return {ok:true,count:ids.length};
+  });
+  if(!result)return res.status(404).json({error:'Không tìm thấy bộ hoặc thư mục thuộc tài khoản của bạn. Chưa thay đổi dữ liệu.'});
+  res.json(result);
+});
 router.patch('/:id/folder',async(req,res)=>{
   const folderId=req.body.folderId;
   if(folderId!==null && (!Number.isSafeInteger(folderId)||folderId<1))return res.status(400).json({error:'Thư mục không hợp lệ.'});
